@@ -1,4 +1,4 @@
-import { cellsAround } from "./geo.js?v=68";
+import { cellsAround } from "./geo.js?v=69";
 
 function showRoad(cls, mpp) {
   if (cls === "motorway" || cls === "trunk" || cls === "primary") return true;
@@ -111,88 +111,83 @@ export function createUI(city, index) {
   root.className = "hud";
   root.innerHTML = `
     <div class="topbar">
+      <button class="key" data-act="map"><i>M</i><span>Chart</span></button>
       <button class="key help" data-act="help"><i>H</i><span>Controls</span></button>
       <button class="key" data-act="home"><i>B</i><span>Restart</span></button>
+      <button class="key" data-act="voice" title="Cabin calls"><i>A</i><span>Voice</span></button>
+    </div>
+    <div class="mission">
       <div class="panel off"><div class="ttl"></div><div class="obj"></div><div class="row"><div class="bl"></div><div class="bar"><i></i></div><div class="tm"></div></div></div>
     </div>
     <div class="banner"><small></small></div>
     <div class="toast"></div>
-    <div class="meters">
-      <div class="thr"><b>THR</b><i><em></em></i><span>0%</span></div>
-      <div class="land off"><b>LAND</b><i><s></s><em></em></i></div>
-    </div>
-    <div class="speed"><div class="street"></div><div class="v">0</div><div class="u">KM/H</div></div>
-    <div class="radar">
-      <div class="weapon">GUN</div>
-      <div class="cap"><span>RADAR</span><em>15 KM</em></div>
-      <canvas class="scope" width="180" height="180"></canvas>
-      <div class="keyline"><i class="g"></i>Civil<i class="r"></i>Drones<i class="b"></i>Enemy<b class="score">0 down</b></div>
+    <div class="leftcol">
+      <div class="radar">
+        <div class="weapon msl">MSL 8</div>
+        <div class="cap"><span>15 KM</span><em></em></div>
+        <canvas class="scope" width="128" height="128"></canvas>
+        <div class="keyline"><i class="g"></i><i class="r"></i><i class="b"></i></div>
+      </div>
+      <div class="cue off"></div>
+      <div class="speed">
+        <div class="street off"></div>
+        <div class="v">0</div>
+        <div class="chips"><span class="u">KM/H</span><span class="chip gear">GEAR</span><span class="chip flaps">CLEAN</span><span class="chip alarm off">STALL</span></div>
+        <div class="thr"><i><em></em></i><span>0%</span></div>
+        <div class="land off"><i><s></s><em></em></i></div>
+      </div>
     </div>
     <div class="crosshair"></div>
     <div class="lead off"></div>
-    <div class="lockbox off"></div>
+    <div class="lockbox off"><em></em></div>
     <div class="tags"></div>
-    <div class="fly off"></div>
     <div class="hint off"></div>
-    <div class="nav">
-      <button class="mapkey" data-act="map">${kbd("M")} Chart</button>
+    <div class="deck">
+      <div><canvas class="horizon" width="168" height="168"></canvas><span>ATT</span></div>
+      <div><canvas class="alt" width="168" height="168"></canvas><span>ALT</span></div>
     </div>
     <div class="pin off"><div class="mk"></div><div class="d"></div></div>
     <div class="manual off">
       <h4>CONTROLS</h4>
-      <div class="cols">
-        <section><h5>Takeoff</h5>
-          ${row(kbd("+"), "add thrust — Up does the same, and it stays when you release")}
-          ${row(kbd("−"), "reduce thrust — Down does the same")}
-          ${row(kbd("F"), "flaps: landing or combat")}
-          ${row(kbd("G"), "gear up / gear down")}
-          ${row(kbd("S"), "rotate once you are above stall")}
-          ${row(kbd("R"), "back to the nearest runway")}
-          ${row(kbd("B") + kbd("Home"), "return to Zhuliany")}
-        </section>
-        <section><h5>Flight</h5>
-          ${row(kbd("A") + kbd("D"), "roll — hold through a barrel roll")}
-          ${row(kbd("S") + kbd("W"), "nose up / down — hold through a loop")}
-          ${row(kbd("Caps"), "wings fold back, jet to 2400 km/h")}
-          ${row("", "landing flaps lift off near 75 km/h, stall at 60")}
-          ${row("", "below stall the nose drops. Stay slow for three seconds and it spins")}
-          ${row("", "a climb bleeds speed, a dive builds it")}
-          ${row("", "the landing bar must stay left of the white mark")}
-          ${row("", "flare with S, gear down, then touch the runway")}
-          ${row("", "landing reloads missiles, the gun, and flares")}
-        </section>
-        <section><h5>Weapons</h5>
-          ${row(kbd("Space"), "fire")}
-          ${row(kbd("Alt"), "gun / missiles")}
-          ${row(kbd("C"), "flares — drop a pair to decoy a missile")}
-          ${row("", "8 missiles, 300 gun rounds, 24 flares")}
-          ${row("", "the gold diamond is where the gun rounds will meet")}
-          ${row("", "missiles lock the nearest drone within 15 km")}
-          ${row("", "the beep speeds up, then holds when a missile is close")}
-          ${row("", "a hard turn breaks a missile; flares pull it off")}
-          ${row("", "green blips are civil, red are drones, orange are enemy jets")}
-          ${row("", "drones roam. A pair of enemy jets arrives every four minutes")}
-          ${row("", "shoot the drones — they break apart and fall")}
-        </section>
-        <section><h5>Camera</h5>
-          ${row(kbd("V"), "cabin / chase view")}
-          ${row("Mouse", "look around (click the game to capture)")}
-          ${row(kbd("Esc"), "release the cursor")}
-        </section>
-        <section><h5>Map</h5>
-          ${row(kbd("M"), "chart (pauses the flight)")}
-          ${row(kbd("Esc"), "close the map")}
-          ${row("Wheel / + −", "zoom")}
-          ${row("Drag / arrows", "pan")}
-          ${row("", "To plane closes the map")}
-        </section>
-        <section><h5>Other</h5>
-          ${row(kbd("H"), "this guide")}
-          ${row("\`", "hide / show the interface")}
-          ${row(kbd("T"), "time of day: morning / day / evening")}
-        </section>
+      <div class="grid">
+        <div>
+          <section><h5>Fly</h5>
+            ${row(kbd("+") + kbd("−"), "Thrust. It stays")}
+            ${row(kbd("W") + kbd("S"), "Nose up / down")}
+            ${row(kbd("A") + kbd("D"), "Roll")}
+            ${row(kbd("Caps"), "Afterburner")}
+            ${row(kbd("F"), "Flaps")}
+            ${row(kbd("G"), "Gear")}
+            ${row(kbd("R"), "Nearest runway")}
+            ${row(kbd("B"), "Zhuliany, or retry")}
+          </section>
+          <section><h5>Look</h5>
+            ${row(kbd("V"), "Cabin / chase")}
+            ${row(kbd("Mouse"), "Look around")}
+            ${row(kbd("Esc"), "Free the cursor")}
+          </section>
+        </div>
+        <div>
+          <section><h5>Fight</h5>
+            ${row(kbd("Space"), "Fire")}
+            ${row(kbd("Alt"), "Missiles / gun")}
+            ${row(kbd("C"), "Flares")}
+          </section>
+          <section><h5>Chart</h5>
+            ${row(kbd("M"), "Opens the chart")}
+            ${row(kbd("Esc"), "Close")}
+            ${row(kbd("Wheel"), "Zoom")}
+            ${row(kbd("Drag"), "Pan")}
+          </section>
+          <section><h5>Other</h5>
+            ${row(kbd("H"), "This list")}
+            ${row(kbd("`"), "Hide the panel")}
+            ${row(kbd("T"), "Morning / day / evening")}
+            ${row(kbd("A"), "Cabin voice")}
+          </section>
+        </div>
       </div>
-      <p class="botline">F sets landing flaps for a short takeoff. G raises the gear once you are flying. Below stall speed the nose drops and the aircraft sinks. Add power within three seconds or it departs into a spin. Shoot the red drones.</p>
+      <p class="note">Flaps on the ground and on approach. Gear comes up by itself above the landing bar. A landing reloads. Green blips are civil, red are drones, orange are jets.</p>
     </div>
     <aside class="place off"><div class="ic">✦</div><div><b></b><small></small><p></p></div></aside>
     <div class="bigmap off">
@@ -209,6 +204,7 @@ export function createUI(city, index) {
         <button data-act="recenter">${city.flight ? "To plane" : "To car"}</button>
       </div>
       <div class="scale"><i></i><span></span></div>
+      <div class="board"><h4>Sorties</h4><div class="cards"></div></div>
       <div class="keys">${city.flight ? "− oblast · + closer · wheel zooms · To plane closes the map" : "− oblast · + closer · wheel zooms · To car returns to driving · Esc closes"}</div>
       <div class="tip off"><b></b><span></span><em></em></div>
       <div class="copy">© OpenStreetMap</div>
@@ -227,6 +223,15 @@ export function createUI(city, index) {
   const bctx = bcanvas.getContext("2d");
   const layers = { sight: true, town: true, road: true };
   const view = { x: city.spawn.x, z: city.spawn.z, mpp: 34 };
+  const textOf = new Map();
+  const setText = (el, value) => {
+    if (!el) return;
+    const next = value == null ? "" : String(value);
+    if (textOf.get(el) === next) return;
+    textOf.set(el, next);
+    el.textContent = next;
+  };
+  let bannerHtml = "";
   let help = false;
   let map = false;
   let hidden = false;
@@ -246,11 +251,20 @@ export function createUI(city, index) {
     }
     if (act === "zoomin") view.mpp = Math.max(1.2, view.mpp / 1.4);
     if (act === "zoomout") view.mpp = Math.min(240, view.mpp * 1.4);
+    if (act === "voice") {
+      const on = actions.onVoice?.();
+      btn.classList.toggle("mute", on === false);
+    }
     actions.onAct?.(act);
     paint();
   });
 
   big.addEventListener("click", (e) => {
+    const card = e.target.closest("[data-sortie]");
+    if (card) {
+      if (!card.disabled) actions.onSortie?.(card.dataset.sortie);
+      return;
+    }
     if (e.target.closest("button")) return;
     const rect = bcanvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
@@ -325,6 +339,132 @@ export function createUI(city, index) {
     big.classList.toggle("off", !map);
     root.classList.toggle("hidden", hidden);
     root.querySelector("button.help").classList.toggle("act", help);
+  }
+
+  function gaugeFace(canvas, paint) {
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width;
+    const h = canvas.height;
+    const cx = w / 2;
+    const cy = h / 2;
+    const r = w / 2 - 3;
+    ctx.clearRect(0, 0, w, h);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.fillStyle = "#101820";
+    ctx.fillRect(0, 0, w, h);
+    paint(ctx, cx, cy, r);
+    ctx.restore();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.strokeStyle = "#e7c56a";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+
+  function drawGauges(player) {
+    const horizon = $(".deck .horizon");
+    const altC = $(".deck .alt");
+    if (!horizon || !altC) return;
+    const roll = player.roll || 0;
+    const pitchDeg = (player.pitch || 0) * 180 / Math.PI;
+    const altM = Math.max(0, player.y || 0);
+    gaugeFace(horizon, (ctx, cx, cy, r) => {
+      const px = 1.55;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(-roll);
+      ctx.translate(0, pitchDeg * px);
+      ctx.fillStyle = "#6eb4e6";
+      ctx.fillRect(-r * 3, -r * 5, r * 6, r * 5);
+      ctx.fillStyle = "#6d5a3c";
+      ctx.fillRect(-r * 3, 0, r * 6, r * 5);
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-r * 2, 0);
+      ctx.lineTo(r * 2, 0);
+      ctx.stroke();
+      ctx.lineWidth = 1.25;
+      ctx.fillStyle = "#fff";
+      ctx.font = "700 11px sans-serif";
+      ctx.textBaseline = "middle";
+      for (let d = -90; d <= 90; d += 10) {
+        if (d === 0) continue;
+        const y = -d * px;
+        const major = d % 20 === 0;
+        const half = major ? 22 : 12;
+        ctx.beginPath();
+        ctx.moveTo(-half, y);
+        ctx.lineTo(half, y);
+        ctx.stroke();
+        if (major) {
+          ctx.textAlign = "left";
+          ctx.fillText(String(Math.abs(d)), half + 3, y);
+        }
+      }
+      ctx.restore();
+      ctx.strokeStyle = "#f4f7fb";
+      ctx.lineWidth = 2;
+      for (const mark of [-60, -30, -10, 0, 10, 30, 60]) {
+        const a = -Math.PI / 2 + (mark * Math.PI) / 180;
+        const inner = mark % 30 === 0 ? r - 16 : r - 11;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner);
+        ctx.lineTo(cx + Math.cos(a) * (r - 4), cy + Math.sin(a) * (r - 4));
+        ctx.stroke();
+      }
+      ctx.fillStyle = "#f4f7fb";
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - r + 7);
+      ctx.lineTo(cx - 5, cy - r + 15);
+      ctx.lineTo(cx + 5, cy - r + 15);
+      ctx.fill();
+      ctx.strokeStyle = "#f2c14e";
+      ctx.lineWidth = 3;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(cx - 28, cy);
+      ctx.lineTo(cx - 9, cy);
+      ctx.moveTo(cx + 9, cy);
+      ctx.lineTo(cx + 28, cy);
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx, cy + 9);
+      ctx.stroke();
+      ctx.fillStyle = "#f2c14e";
+      ctx.beginPath();
+      ctx.arc(cx, cy, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    gaugeFace(altC, (ctx, cx, cy, r) => {
+      ctx.strokeStyle = "#9fb0c6";
+      ctx.lineWidth = 1.5;
+      for (let i = 0; i < 10; i++) {
+        const a = -Math.PI / 2 + (i / 10) * Math.PI * 2;
+        const inner = i % 5 === 0 ? r - 18 : r - 12;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner);
+        ctx.lineTo(cx + Math.cos(a) * (r - 5), cy + Math.sin(a) * (r - 5));
+        ctx.stroke();
+      }
+      const ang = -Math.PI / 2 + ((altM % 1000) / 1000) * Math.PI * 2;
+      ctx.strokeStyle = "#f2c14e";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(ang) * (r - 22), cy + Math.sin(ang) * (r - 22));
+      ctx.stroke();
+      ctx.fillStyle = "#f4f7fb";
+      ctx.font = "700 14px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(String(Math.round(altM)), cx, cy + 2);
+      ctx.fillStyle = "#f2c14e";
+      ctx.font = "700 9px sans-serif";
+      ctx.fillText("m", cx, cy + 16);
+    });
   }
 
   function drawRadar(player, sim) {
@@ -421,9 +561,7 @@ export function createUI(city, index) {
     sctx.closePath();
     sctx.fill();
     const cap = $(".radar em");
-    if (cap) cap.textContent = hostile + " red";
-    const score = $(".radar .score");
-    if (score) score.textContent = (sim.kills || 0) + " down";
+    if (cap) cap.textContent = hostile ? String(hostile) : "";
     if (player.warning) {
       sctx.strokeStyle = "#ff3b30";
       sctx.lineWidth = 3;
@@ -637,12 +775,29 @@ export function createUI(city, index) {
     } else tip.classList.remove("on");
   }
 
+  let cardSig = "";
+  function paintBoard(sim) {
+    const cards = sim?.cards || [];
+    const sig = cards.map((c) => c.id + ":" + c.state + ":" + (c.pick ? 1 : 0) + ":" + (c.grade || "")).join("|");
+    if (sig === cardSig) return;
+    cardSig = sig;
+    const box = $(".cards");
+    if (!box) return;
+    box.innerHTML = cards.map((c) => (
+      `<button type="button" data-sortie="${c.id}" class="${c.state}"${c.pick ? "" : " disabled"}><b>${c.title}${c.grade ? `<i>${c.grade}</i>` : ""}</b><span>${c.blurb}</span></button>`
+    )).join("");
+  }
+
   return {
     root,
     actions,
     get mapOpen() { return map; },
     get paused() { return map; },
     toggleHelp() { help = !help; paint(); },
+    setVoice(on) {
+      const btn = root.querySelector("[data-act=voice]");
+      if (btn) btn.classList.toggle("mute", !on);
+    },
     toggleMap(player) {
       map = !map;
       if (map && player) {
@@ -668,6 +823,9 @@ export function createUI(city, index) {
       paint();
     },
     closeMap() { map = false; paint(); },
+    showMap(player) {
+      if (!map) this.toggleMap(player);
+    },
     nudgeMap(dx, dz) { view.x += dx * view.mpp; view.z += dz * view.mpp; },
     zoomMap(f) { view.mpp = Math.max(1.2, Math.min(240, view.mpp * f)); },
     recenter(player) { view.x = player.x; view.z = player.z; },
@@ -676,36 +834,49 @@ export function createUI(city, index) {
       const { player, sim, street, camera } = frame;
       actions.player = player;
       actions.sim = sim;
-      $(".money span") && ($(".money span").textContent = Math.round(sim.money));
+      $(".money span") && setText($(".money span"), Math.round(sim.money));
       const panel = $(".panel");
       if (sim.objective) {
         panel.classList.remove("off");
-        panel.querySelector(".ttl").textContent = sim.objective.title;
-        panel.querySelector(".obj").textContent = shortStreet(sim.objective.text);
-        panel.querySelector(".bl").textContent = "";
-        panel.querySelector(".bar i").style.width = Math.round(sim.objective.bar * 100) + "%";
+        setText(panel.querySelector(".ttl"), sim.objective.title);
+        setText(panel.querySelector(".obj"), shortStreet(sim.objective.text));
+        setText(panel.querySelector(".bl"), "");
+        const bar = panel.querySelector(".bar i");
+        const pctBar = Math.round(sim.objective.bar * 100) + "%";
+        if (bar && bar.dataset.w !== pctBar) {
+          bar.dataset.w = pctBar;
+          bar.style.width = pctBar;
+        }
         const tm = panel.querySelector(".tm");
-        tm.textContent = sim.objective.dist == null
-          ? ""
-          : sim.objective.time == null
-            ? (sim.objective.dist > 1000 ? (sim.objective.dist / 1000).toFixed(1) + " km" : Math.round(sim.objective.dist) + " m")
-            : Math.max(0, Math.ceil(sim.objective.time)) + " s";
-        tm.classList.toggle("low", sim.objective.time < 20);
+        if (sim.objective.time != null) setText(tm, Math.max(0, Math.ceil(sim.objective.time)) + " s");
+        else if (sim.objective.dist != null) {
+          setText(tm, sim.objective.dist > 1000
+            ? (sim.objective.dist / 1000).toFixed(1) + " km"
+            : Math.round(sim.objective.dist) + " m");
+        } else setText(tm, "");
+        tm.classList.toggle("low", sim.objective.time != null && sim.objective.time < 20);
       } else panel.classList.add("off");
+      paintBoard(sim);
       const banner = $(".banner");
       banner.classList.toggle("on", sim.bannerT > 0);
-      banner.firstChild && (banner.childNodes[0].textContent = "");
-      banner.innerHTML = `${sim.banner}<small>${englishLine(sim.bannerSub || "")}</small>`;
+      const nextBanner = `${sim.banner || ""}<small>${englishLine(sim.bannerSub || "")}</small>`;
+      if (nextBanner !== bannerHtml) {
+        bannerHtml = nextBanner;
+        banner.innerHTML = nextBanner;
+      }
       const toast = $(".toast");
       toast.classList.toggle("on", sim.toastT > 0);
-      toast.textContent = sim.toast || "";
+      setText(toast, sim.toast || "");
       const kmh = Math.abs(player.speed) * 3.6;
-      $(".speed .v").textContent = String(Math.round(kmh));
+      setText($(".speed .v"), Math.round(kmh));
       const thr = $(".thr");
       if (thr) {
         const pct = Math.round((player.throttle || 0) * 100);
-        thr.querySelector("em").style.width = pct + "%";
-        thr.querySelector("span").textContent = pct + "%";
+        if (thr.dataset.pct !== String(pct)) {
+          thr.dataset.pct = String(pct);
+          thr.querySelector("em").style.width = pct + "%";
+        }
+        setText(thr.querySelector("span"), pct + "%");
       }
       const land = $(".land");
       if (land) {
@@ -714,45 +885,40 @@ export function createUI(city, index) {
         const mark = Math.max(0, Math.min(1, player.landStress || 0));
         land.querySelector("em").style.left = (mark * 100) + "%";
       }
-      const alt = Math.max(0, Math.round(player.y));
-      if (player.flight) {
-        const stall = player.flaps > 0.5 ? 60 : 130;
-        const bits = [
-          "KM/H",
-          "ALT " + alt + " M",
-          player.gearDown === false ? "GEAR UP" : "GEAR",
-          player.flaps > 0.5 ? "FLAPS" : "CLEAN",
-        ];
-        if (player.flying && kmh < stall + 20) bits.push("STALL");
-        $(".speed .u").textContent = bits.join(" · ");
-      } else {
-        $(".speed .u").textContent = player.flying
-          ? `KM/H · ALT ${alt} M ASL`
-          : `KM/H · ${player.gear} · ${alt} M`;
+      const gear = $(".chip.gear");
+      if (gear) {
+        const up = player.gearDown === false;
+        setText(gear, up ? "UP" : "GEAR");
+        gear.classList.toggle("up", up);
       }
-      $(".speed .street").textContent = shortStreet(street || "");
-      const fly = $(".fly");
-      fly.classList.add("on");
-      const vr = player.flaps > 0.5 ? 70 : 140;
-      fly.textContent = player.wrecked
-        ? "Destroyed"
-        : player.spin
-        ? "Spin — add power"
-        : player.stalling
-          ? "Stall — nose down"
-          : player.stallWarn
-          ? "Stall warning"
-          : player.flying
-          ? (player.gearDown === false ? "Gear up · " : "") + (player.jets ? "Jet · " : "Airborne · ") + Math.round(player.vy) + " m/s"
-          : kmh > vr
-            ? "S · rotate"
-            : player.flaps > 0.5
-              ? "Flaps · + · takeoff"
-              : "+ · takeoff";
+      const flaps = $(".chip.flaps");
+      if (flaps) setText(flaps, player.flaps > 0.5 ? "FLAP" : "CLEAN");
+      const alarm = $(".chip.alarm");
+      if (alarm) {
+        const alarmText = player.wrecked ? "LOST" : player.spin ? "SPIN" : (player.stalling || player.stallWarn) ? "STALL" : "";
+        setText(alarm, alarmText);
+        alarm.classList.toggle("off", !alarmText);
+      }
+      const streetEl = $(".speed .street");
+      const placeName = shortStreet(street || "");
+      const showPlace = !!placeName && (!player.flying || kmh < 90);
+      setText(streetEl, showPlace ? placeName : "");
+      streetEl.classList.toggle("off", !showPlace);
+      const cue = $(".cue");
+      if (cue) {
+        const vr = player.flaps > 0.5 ? 70 : 140;
+        const cueText = player.wrecked
+          ? ""
+          : (sim.cue || (!player.flying
+            ? (kmh > vr ? "S · rotate" : player.flaps > 0.5 ? "Flaps · + · takeoff" : "+ · takeoff")
+            : ""));
+        setText(cue, cueText);
+        cue.classList.toggle("on", !!cueText);
+      }
       const weapon = $(".weapon");
       if (weapon) {
         const flr = "FLR " + (player.flares ?? 0);
-        weapon.textContent = (player.weapon ? "MSL " + (player.missiles ?? 0) : "GUN " + (player.rounds ?? 0)) + "  ·  " + flr;
+        setText(weapon, (player.weapon ? "MSL " + (player.missiles ?? 0) : "GUN " + (player.rounds ?? 0)) + "  ·  " + flr);
         weapon.classList.toggle("msl", !!player.weapon);
         weapon.classList.toggle("lock", !!player.lock);
       }
@@ -764,6 +930,15 @@ export function createUI(city, index) {
           box.classList.remove("off");
           box.style.left = frame.lockScreen.x + "px";
           box.style.top = frame.lockScreen.y + "px";
+          const em = box.querySelector("em");
+          const range = player.shotRange;
+          if (em) {
+            setText(em, range == null
+              ? ""
+              : range >= 1000
+                ? (range / 1000).toFixed(1) + " km"
+                : Math.round(range) + " m");
+          }
         } else box.classList.add("off");
       }
       const lead = $(".lead");
@@ -776,9 +951,14 @@ export function createUI(city, index) {
       }
       const tags = $(".tags");
       if (tags) {
-        tags.innerHTML = (frame.tags || []).map((tag) => (
-          `<b style="left:${tag.x}px;top:${tag.y}px;opacity:${Math.max(0, tag.life)}">${tag.text}</b>`
-        )).join("");
+        const list = frame.tags || [];
+        if (!list.length) {
+          if (tags.childElementCount) tags.textContent = "";
+        } else {
+          tags.innerHTML = list.map((tag) => (
+            `<b style="left:${tag.x}px;top:${tag.y}px;opacity:${Math.max(0, tag.life)}">${tag.text}</b>`
+          )).join("");
+        }
       }
       $(".radar")?.classList.toggle("warn", !!player.warning);
       const hint = $(".hint");
@@ -799,6 +979,7 @@ export function createUI(city, index) {
         place.querySelector("p").textContent = near.note || "";
       } else place.classList.remove("on");
       drawRadar(player, sim);
+      drawGauges(player);
       drawMini(player, street, sim);
       drawBig(player, sim);
       if (sim.pin && camera) {

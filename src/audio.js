@@ -13,6 +13,8 @@ export function createAudio() {
   let quietPri = 0;
   let cabinVoice = null;
   let callToken = 0;
+  let voiceOn = true;
+  try { voiceOn = localStorage.getItem("kievride-voice") !== "0"; } catch { /* keep talking */ }
 
   function pickVoice() {
     if (typeof speechSynthesis === "undefined") return null;
@@ -139,20 +141,31 @@ export function createAudio() {
       ensure();
       const now = ctx.currentTime;
       if (missile) {
-        const src = burst(0.42, 0.92);
+        const src = burst(0.7, 0.94);
         const f = ctx.createBiquadFilter();
         f.type = "bandpass";
-        f.Q.value = 1.4;
-        f.frequency.setValueAtTime(280, now);
-        f.frequency.exponentialRampToValueAtTime(1400, now + 0.18);
-        f.frequency.exponentialRampToValueAtTime(180, now + 0.4);
+        f.Q.value = 0.7;
+        f.frequency.setValueAtTime(140, now);
+        f.frequency.exponentialRampToValueAtTime(2200, now + 0.22);
+        f.frequency.exponentialRampToValueAtTime(90, now + 0.68);
         const g = ctx.createGain();
-        g.gain.setValueAtTime(0.22, now);
-        g.gain.exponentialRampToValueAtTime(0.0001, now + 0.42);
+        g.gain.setValueAtTime(0.42, now);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + 0.7);
         src.connect(f);
         f.connect(g);
         g.connect(master);
         src.start(now);
+        const o = ctx.createOscillator();
+        const og = ctx.createGain();
+        o.type = "sine";
+        o.frequency.setValueAtTime(96, now);
+        o.frequency.exponentialRampToValueAtTime(34, now + 0.45);
+        og.gain.setValueAtTime(0.36, now);
+        og.gain.exponentialRampToValueAtTime(0.0001, now + 0.48);
+        o.connect(og);
+        og.connect(master);
+        o.start(now);
+        o.stop(now + 0.5);
         return;
       }
       const src = burst(0.045, 0.2);
@@ -289,7 +302,15 @@ export function createAudio() {
         o.stop(t + 0.07);
       }
     },
+    voiceOn() { return voiceOn; },
+    toggleVoice() {
+      voiceOn = !voiceOn;
+      if (!voiceOn && typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
+      try { localStorage.setItem("kievride-voice", voiceOn ? "1" : "0"); } catch { /* private mode */ }
+      return voiceOn;
+    },
     callout(text, priority = 0) {
+      if (!voiceOn) return true;
       if (typeof speechSynthesis === "undefined" || !text) return false;
       const now = performance.now();
       if (now < quietUntil && priority < quietPri) return false;

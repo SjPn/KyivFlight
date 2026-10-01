@@ -7,7 +7,7 @@
   <meta name="description" content="Fly around Kyiv and Kyiv Oblast. Airfields, traffic in the sky, and a jet that fights.">
   <meta name="theme-color" content="#0d1117">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/src/style.css?v=44">
+  <link rel="stylesheet" href="/src/style.css?v=57">
   <script type="importmap">
   {
     "imports": { "three": "/vendor/three.module.js" }
@@ -17,10 +17,119 @@
 <body>
   <div id="app"></div>
   <div id="loading">
-    <div class="title">Kyiv Flight</div>
-    <div class="msg">Loading…</div>
-    <div class="bar"><i></i></div>
+    <div class="sky" aria-hidden="true">
+      <div class="sun"></div>
+      <div class="stars"></div>
+      <svg class="jet" viewBox="0 0 128 40">
+        <path fill="#e7eef6" d="M8 21 L36 18 L54 7 L60 17 L108 15 L124 20 L110 23 L60 24 L54 34 L42 23 L20 24 Z"/>
+        <path fill="#f2c14e" d="M8 19 L0 21.5 L8 24 Z"/>
+      </svg>
+      <svg class="skyline" viewBox="0 0 1440 260" preserveAspectRatio="xMidYMax slice">
+        <path fill="#1a2740" d="M0 176 C160 150 280 168 420 148 C560 128 700 160 860 150 C1020 140 1180 164 1440 138 V260 H0 Z"/>
+        <g fill="#0c1422">
+          <rect x="0" y="208" width="1440" height="52"/>
+          <rect x="28" y="176" width="26" height="34"/>
+          <rect x="60" y="164" width="20" height="46"/>
+          <rect x="86" y="184" width="38" height="26"/>
+          <path d="M140 208 L160 168 L214 146 L250 174 L276 208 Z"/>
+          <path d="M198 146 L202 88 L206 146 Z"/>
+          <rect x="194" y="144" width="16" height="26"/>
+          <polygon points="186,170 220,170 214,152 192,152"/>
+          <rect x="292" y="170" width="16" height="40"/>
+          <circle cx="300" cy="166" r="10"/>
+          <rect x="318" y="180" width="78" height="30"/>
+          <circle cx="338" cy="172" r="13"/>
+          <circle cx="364" cy="164" r="17"/>
+          <circle cx="390" cy="174" r="11"/>
+          <rect x="362" y="142" width="3" height="22"/>
+          <rect x="456" y="112" width="24" height="98"/>
+          <polygon points="454,116 468,78 482,116"/>
+          <rect x="465" y="62" width="6" height="18"/>
+          <rect x="492" y="162" width="32" height="48"/>
+          <circle cx="508" cy="156" r="11"/>
+          <rect x="548" y="148" width="24" height="62"/>
+          <rect x="578" y="128" width="16" height="82"/>
+          <rect x="600" y="156" width="30" height="54"/>
+          <rect x="636" y="136" width="20" height="74"/>
+          <rect x="662" y="166" width="36" height="44"/>
+          <rect x="706" y="142" width="14" height="68"/>
+          <path d="M748 208 L786 186 L850 172 L902 190 L930 208 Z"/>
+          <polygon points="858,208 908,208 900,174 866,174"/>
+          <polygon points="872,174 894,174 900,116 866,122"/>
+          <circle cx="880" cy="110" r="8"/>
+          <polygon points="886,126 898,118 972,26 960,22"/>
+          <polygon points="964,28 978,18 982,4 968,8"/>
+          <rect x="1004" y="92" width="20" height="118"/>
+          <polygon points="1000,96 1014,58 1028,96"/>
+          <rect x="1010" y="42" width="8" height="18"/>
+          <circle cx="1014" cy="38" r="4"/>
+          <rect x="1044" y="168" width="96" height="42"/>
+          <circle cx="1064" cy="160" r="13"/>
+          <circle cx="1092" cy="152" r="17"/>
+          <circle cx="1120" cy="162" r="12"/>
+          <rect x="1146" y="148" width="18" height="62"/>
+          <circle cx="1155" cy="142" r="9"/>
+          <rect x="1204" y="174" width="28" height="36"/>
+          <rect x="1238" y="160" width="16" height="50"/>
+          <rect x="1262" y="182" width="44" height="28"/>
+          <rect x="1316" y="168" width="22" height="42"/>
+        </g>
+        <g fill="#f2c14e" opacity=".75">
+          <rect x="554" y="158" width="3" height="4"/>
+          <rect x="562" y="158" width="3" height="4"/>
+          <rect x="554" y="170" width="3" height="4"/>
+          <rect x="584" y="142" width="3" height="4"/>
+          <rect x="584" y="154" width="3" height="4"/>
+          <rect x="608" y="168" width="3" height="4"/>
+          <rect x="642" y="150" width="3" height="4"/>
+          <rect x="642" y="164" width="3" height="4"/>
+          <rect x="710" y="156" width="3" height="4"/>
+          <rect x="66" y="176" width="3" height="4"/>
+          <rect x="1212" y="184" width="3" height="4"/>
+        </g>
+      </svg>
+      <div class="river"></div>
+    </div>
+    <div class="intro">
+      <div class="brief">
+      <p class="kicker">Sortie</p>
+      <h1 class="wordmark">Kyiv Flight</h1>
+      <p class="tagline">A jet over Kyiv. Learn the weapons, then fly the sorties.</p>
+      <div class="grid">
+        <section class="card">
+          <h2>The sortie</h2>
+          <ul>
+            <li>You start on the runway at <b>Zhuliany</b>.</li>
+            <li><b>First flight</b>: gun one drone, then lock the next with a missile.</li>
+            <li>Land, and the next starts — the Dnipro under 800 m, then two drones and a jet.</li>
+            <li>After those three, the chart opens the rest. Green blips are civil. Leave them alone.</li>
+          </ul>
+        </section>
+        <section class="card">
+          <h2>You can</h2>
+          <ul>
+            <li class="act"><b>Fly</b><span>Take off, loop, roll, and light the afterburner to 2400 km/h. Land on real runways across the oblast.</span></li>
+            <li class="act"><b>Fight</b><span>Gun and missiles, flares, and a radar. Green is civil, red is a drone, orange is an enemy jet.</span></li>
+            <li class="act"><b>See the city</b><span>Maidan, the Lavra, the Dnipro. After the lessons, pick the next sortie on the chart with M.</span></li>
+          </ul>
+        </section>
+      </div>
+      <div class="strip">
+        <span><kbd>+</kbd> thrust</span>
+        <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> fly</span>
+        <span><kbd>Space</kbd> fire</span>
+        <span><kbd>Alt</kbd> gun / missiles</span>
+        <span><kbd>C</kbd> flares</span>
+        <span><kbd>H</kbd> full guide</span>
+      </div>
+      </div>
+      <div class="go">
+        <div class="bar"><i></i></div>
+        <div class="msg">Charting Kyiv…</div>
+        <button class="takeoff" type="button" disabled>Preparing the runway…</button>
+      </div>
+    </div>
   </div>
-  <script type="module" src="/src/main.js?v=123"></script>
+  <script type="module" src="/src/main.js?v=150"></script>
 </body>
 </html>

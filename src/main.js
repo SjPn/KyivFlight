@@ -1,17 +1,27 @@
 import * as THREE from "three";
-import { createAudio } from "./audio.js?v=33";
-import { readElev } from "./elev.js?v=50";
-import { clearPlazas, indexCity, nearestRoad, onRoad, openStreets, presentEast } from "./geo.js?v=68";
+import { createAudio } from "./audio.js?v=35";
+import { readElev } from "./elev.js";
+import { clearPlazas, indexCity, nearestRoad, onRoad, openStreets, presentEast } from "./geo.js?v=69";
+import { decodeCity } from "./mapio.js?v=1";
 import { FIELDS, fieldAt, nearestField, runwayStart } from "./airfields.js?v=2";
-import { createPlayer, resetPlayer, updatePlayer } from "./player.js?v=85";
-import { clearRetry, createSim, nearestSight, retryHint, updateSim } from "./sim.js?v=62";
-import { createUI } from "./ui.js?v=80";
-import { createWorld } from "./world.js?v=103";
+import { createPlayer, resetPlayer, updatePlayer } from "./player.js?v=88";
+import { armSortie, clearRetry, createSim, nearestSight, pickSortie, restartSortie, retryHint, updateSim } from "./sim.js?v=65";
+import { createUI } from "./ui.js?v=91";
+import { createWorld } from "./world.js?v=116";
 
 const app = document.querySelector("#app");
 const loading = document.querySelector("#loading");
 const loadMsg = loading.querySelector(".msg");
-const loadBar = loading.querySelector("i");
+const loadBar = loading.querySelector(".bar i");
+const takeoff = loading.querySelector(".takeoff");
+let briefing = true;
+
+function dismissBrief() {
+  if (!briefing || !loading.classList.contains("ready")) return;
+  briefing = false;
+  keys.clear();
+  loading.classList.add("done");
+}
 
 function setLoad(text, t) {
   loadMsg.textContent = text;
@@ -32,7 +42,7 @@ function bootClock() {
     const elapsed = performance.now() - t0;
     const left = p > 0.03 ? (elapsed * (1 - p)) / p : 12000;
     const secs = Math.max(0, Math.ceil(left / 1000));
-    setLoad(secs > 0 ? `${secs} s` : "A moment…", Math.max(0.02, Math.min(0.99, p)));
+    setLoad(secs > 0 ? `Charting Kyiv… ${secs} s` : "A moment…", Math.max(0.02, Math.min(0.99, p)));
   }
   return {
     set(id, value) {
@@ -41,7 +51,12 @@ function bootClock() {
     },
     finish(measured) {
       try { localStorage.setItem("kievride-boot", JSON.stringify(measured)); } catch { /* keep the last good timing */ }
-      setLoad("Ready to fly", 1);
+      setLoad("Runway is clear", 1);
+      loading.classList.add("ready");
+      if (takeoff) {
+        takeoff.disabled = false;
+        takeoff.textContent = "Take off";
+      }
     },
   };
 }
@@ -75,6 +90,29 @@ async function fetchCounted(url, onBytes, missing) {
 }
 
 const yieldPaint = () => new Promise((resolve) => setTimeout(resolve, 0));
+const DATA_CACHE = "kievride-data-v51";
+
+async function fetchCached(url, onBytes, missing) {
+  if (typeof caches !== "undefined") {
+    try {
+      const cache = await caches.open(DATA_CACHE);
+      const hit = await cache.match(url);
+      if (hit) {
+        const buf = new Uint8Array(await hit.arrayBuffer());
+        onBytes(buf.byteLength, buf.byteLength);
+        return buf;
+      }
+    } catch { /* private mode */ }
+  }
+  const buf = await fetchCounted(url, onBytes, missing);
+  if (typeof caches !== "undefined") {
+    try {
+      const cache = await caches.open(DATA_CACHE);
+      await cache.put(url, new Response(buf.slice()));
+    } catch { /* keep the memory copy */ }
+  }
+  return buf;
+}
 
 const SIGHT_EN = {
   maidan: ["Independence Square", "Kyiv's main square and the Independence Column"],
@@ -162,7 +200,17 @@ let camBank = 0;
 let camFov = 68;
 let viewDist = 16;
 
+takeoff?.addEventListener("click", dismissBrief);
+
 window.addEventListener("keydown", (e) => {
+  if (briefing) {
+    e.stopPropagation();
+    if (!e.repeat && (e.code === "Enter" || e.code === "NumpadEnter")) {
+      e.preventDefault();
+      dismissBrief();
+    }
+    return;
+  }
   const chord = (e.ctrlKey || e.metaKey) && (e.code === "KeyW" || e.key === "w" || e.key === "W");
   if (chord) {
     e.preventDefault();
@@ -181,6 +229,13 @@ function wrapRoll(a) {
   if (a > Math.PI) a -= t;
   if (a < -Math.PI) a += t;
   return a;
+}
+
+function foxLine(meters) {
+  if (meters == null || meters < 800) return "Fox two. Fox two.";
+  const words = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen"];
+  const n = Math.max(1, Math.min(15, Math.round(meters / 1000)));
+  return "Fox two. " + words[n] + (n === 1 ? " kilometer." : " kilometers.");
 }
 
 function steerTo(h, target) {
@@ -276,28 +331,54 @@ async function boot() {
     clock.set("fetch", all ? have / all : 0.01);
   };
   const tFetch = performance.now();
-  const [mapBytes, elevBytes] = await Promise.all([
-    fetchCounted("/data/kyiv.json?v=49", (n, t) => { got.map = n; totals.map = t; noteFetch(); }, "Map missing. Run npm run map"),
-    fetchCounted("/data/elev.bin?v=49", (n, t) => { got.elev = n; totals.elev = t; noteFetch(); }, "Elevation grid missing"),
+  const onMap = (n, t) => { got.map = n; totals.map = t; noteFetch(); };
+  const onElev = (n, t) => { got.elev = n; totals.elev = t; noteFetch(); };
+  const loadChart = async () => {
+    try {
+      return { bin: true, bytes: await fetchCached("/data/kyiv.bin?v=51", onMap, "nomap") };
+    } catch (err) {
+      if (!/nomap/i.test(err.message || "")) throw err;
+      return { bin: false, bytes: await fetchCached("/data/kyiv.json?v=49", onMap, "Map missing. Run npm run map") };
+    }
+  };
+  const [chart, elevBytes] = await Promise.all([
+    loadChart(),
+    fetchCached("/data/elev.bin?v=49", onElev, "Elevation grid missing"),
   ]);
   clock.set("fetch", 1);
   await yieldPaint();
   const tRead = performance.now();
-  const city = JSON.parse(new TextDecoder().decode(mapBytes));
   readElev(elevBytes.buffer);
+  let city;
+  let index;
+  let tStreets = tRead;
+  let tIndex = tRead;
+  if (chart.bin) {
+    const decoded = decodeCity(chart.bytes);
+    city = decoded.city;
+    index = decoded.index;
+    applyEnglish(city);
+    tIndex = performance.now();
+    clock.set("read", 1);
+    clock.set("streets", 1);
+    clock.set("index", 1);
+  } else {
+    city = JSON.parse(new TextDecoder().decode(chart.bytes));
+    if (!city.roads?.length) throw new Error("The map is empty");
+    clock.set("read", 1);
+    await yieldPaint();
+    tStreets = performance.now();
+    presentEast(city);
+    openStreets(city);
+    clearPlazas(city);
+    applyEnglish(city);
+    clock.set("streets", 1);
+    await yieldPaint();
+    tIndex = performance.now();
+    index = indexCity(city);
+    clock.set("index", 1);
+  }
   if (!city.roads?.length) throw new Error("The map is empty");
-  clock.set("read", 1);
-  await yieldPaint();
-  const tStreets = performance.now();
-  presentEast(city);
-  openStreets(city);
-  clearPlazas(city);
-  applyEnglish(city);
-  clock.set("streets", 1);
-  await yieldPaint();
-  const tIndex = performance.now();
-  const index = indexCity(city);
-  clock.set("index", 1);
   await yieldPaint();
   const tWorld = performance.now();
   // Driving is switched off. The street mesh stays so the city reads from the air.
@@ -318,6 +399,7 @@ async function boot() {
   player.flight = flight;
   const sim = createSim(city, index, flight);
   sim.craft = world.craft;
+  armSortie(sim, player);
   const audio = createAudio();
   const ui = createUI(city, index);
   world.setQuality(flight ? 1 : 2, renderer);
@@ -329,6 +411,7 @@ async function boot() {
     resetPlayer(player, next);
     player.flight = true;
     player.y = world.surface(next.x, next.z, player.y) + 0.45;
+    restartSortie(sim, player);
   };
 
   const holdFlightKeys = async () => {
@@ -357,9 +440,14 @@ async function boot() {
     audio.unlock();
     if (act === "home") parkPlane(homeField);
   };
+  ui.actions.onVoice = () => audio.toggleVoice();
+  ui.setVoice(audio.voiceOn());
   ui.actions.onPin = (sight) => {
     sim.pin = sight;
     ui.closeMap();
+  };
+  ui.actions.onSortie = (id) => {
+    pickSortie(sim, player, id);
   };
 
   window.addEventListener("keydown", (e) => {
@@ -385,11 +473,12 @@ async function boot() {
       e.preventDefault();
       player.weapon = player.weapon ? 0 : 1;
     }
+    const approach = player.flying && !player.wrecked && (player.agl ?? 999) < 180;
     if (e.code === "KeyG" && player.flight) {
       e.preventDefault();
-      if (!player.flying) {
-        sim.toast = "Gear stays down on the ground";
-        sim.toastT = 1.3;
+      if (!approach) {
+        sim.toast = "Gear comes down on approach";
+        sim.toastT = 1.4;
       } else {
         player.gearDown = !player.gearDown;
         sim.toast = player.gearDown ? "Gear down" : "Gear up";
@@ -398,12 +487,15 @@ async function boot() {
     }
     if (e.code === "KeyF" && player.flight) {
       e.preventDefault();
+      const onGround = !player.flying && !player.wrecked;
       if (player.jets) {
         player.flaps = 0;
         sim.toast = "Jet mode keeps the flaps clean";
+      } else if (!onGround && !approach) {
+        sim.toast = "Flaps come down on approach";
       } else {
         player.flaps = player.flaps > 0.5 ? 0 : 1;
-        sim.toast = player.flaps ? "Flaps · landing · stall 60 km/h" : "Flaps · combat · stall 130 km/h";
+        sim.toast = player.flaps ? "Flaps · stall 60 km/h" : "Flaps up";
       }
       sim.toastT = 1.6;
     }
@@ -452,7 +544,7 @@ async function boot() {
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
-    const paused = ui.paused;
+    const paused = ui.paused || briefing;
     const input = readInput(player, ui.mapOpen);
     if (ui.mapOpen) {
       if (keys.has("ArrowLeft") || keys.has("KeyA")) ui.nudgeMap(-18, 0);
@@ -462,9 +554,22 @@ async function boot() {
     }
     if (!paused) {
       updatePlayer(player, input, dt, world);
-      updateSim(sim, player, dt, input);
-      const fx = world.stepCombat(player, input, dt);
+      const fx = world.stepCombat(player, input, dt, sim.plan);
+      updateSim(sim, player, dt, fx);
+      if (sim.openChart) {
+        sim.openChart = false;
+        ui.showMap(player);
+      }
+      if (sim.closeChart) {
+        sim.closeChart = false;
+        ui.closeMap();
+      }
+      if (sim.line && !sim.voiced[sim.line.id] && audio.callout(sim.line.text, sim.line.pri)) {
+        sim.voiced[sim.line.id] = true;
+      }
       if (fx.shot) audio.shot(fx.missile);
+      else if (fx.launch) audio.shot(true);
+      if (fx.missile) audio.callout(foxLine(player.shotRange), 3);
       if (fx.flare) audio.flare();
       if (fx.boom) audio.boom();
       if (player.lock && !hadLock) audio.lock();
@@ -499,7 +604,12 @@ async function boot() {
           }
         } else pullT = 0;
       }
-      if (fx.launch) audio.callout("Missile. Missile.", 4);
+      if (fx.launch) {
+        if (!sim.voiced.flares && audio.callout("Break. Flares.", 4)) {
+          sim.voiced.flares = true;
+          sim.flareCue = 6;
+        } else if (sim.voiced.flares) audio.callout("Missile. Missile.", 4);
+      }
       const missileNear = player.missileDist;
       const missileClose = missileNear != null && missileNear < 240 && player.flying && !player.wrecked;
       if (missileClose) {
@@ -528,13 +638,15 @@ async function boot() {
       wasSpin = !!player.spin;
       if (fx.kills) {
         sim.kills += fx.kills;
-        sim.sortieGot = (sim.sortieGot || 0) + fx.kills;
         sim.toast = fx.banditKills ? (fx.banditKills > 1 ? fx.banditKills + " enemy down" : "Enemy down") : (fx.kills > 1 ? fx.kills + " drones down" : "Drone down");
         sim.toastT = 1.6;
       }
       if (fx.raid) {
-        sim.toast = "Enemy aircraft · " + fx.raid;
-        sim.toastT = 2.2;
+        const km = Math.max(1, Math.round((fx.raidRange || 12000) / 1000));
+        const call = (fx.raid > 1 ? "Two, east, " : "Bandit, east, ") + km + " kilometers.";
+        audio.callout(call, 3);
+        sim.toast = call;
+        sim.toastT = 2.4;
       }
       if (fx.empty) {
         sim.toast = "Missiles empty · land to rearm";
@@ -681,7 +793,6 @@ async function boot() {
   };
 
   clock.finish(bootMeasured);
-  loading.classList.add("done");
   frame(performance.now());
 }
 

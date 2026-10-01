@@ -1,8 +1,8 @@
 import * as THREE from "three";
-import { heightAt } from "./elev.js?v=50";
+import { heightAt } from "./elev.js";
 import { buildingContact, cellsAround, nearestRoad, onRoad, roadDeck, waterAt } from "./geo.js?v=68";
 import { fieldAt } from "./airfields.js?v=2";
-import { createCombat } from "./combat.js?v=17";
+import { createCombat } from "./combat.js?v=19";
 
 const CLASS_COLOR = {
   motorway: [1, 1, 1],
@@ -17,7 +17,7 @@ const CLASS_COLOR = {
 
 const TIMES = [
   { bg: 0xd7c4a4, fog: 0xe7d7bc, sun: 0xffc98a, elev: 24, az: 70, intensity: 1.3, amb: 0.82, emit: 0.04 },
-  { bg: 0x7eb6ea, fog: 0xd7e8f8, sun: 0xfff8ec, elev: 64, az: 32, intensity: 1.65, amb: 1.08, emit: 0 },
+  { bg: 0x7eb6ea, fog: 0xd7e8f8, sun: 0xfff4d2, elev: 20, az: -86, intensity: 1.35, amb: 0.62, emit: 0 },
   { bg: 0x6a7aa3, fog: 0xa8b4cc, sun: 0xffb07a, elev: 14, az: -80, intensity: 0.95, amb: 0.62, emit: 0.28 },
 ];
 
@@ -102,6 +102,31 @@ function windowTexture() {
     g.fillStyle = "#f2c14e";
     g.fillRect(0, h - 36, w, 3);
   }, 128, 256, true);
+}
+
+function landTexture() {
+  return canvasTex((g, w, h) => {
+    g.fillStyle = "#f4f2ea";
+    g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 160; i++) {
+      const x = (i * 89) % w;
+      const y = (i * 47) % h;
+      const rad = 12 + (i % 6) * 9;
+      const shade = 198 + (i % 5) * 10;
+      g.fillStyle = `rgba(${shade - 16},${shade},${shade - 30},0.2)`;
+      g.beginPath();
+      g.ellipse(x, y, rad, rad * 0.55, (i % 7) * 0.35, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.strokeStyle = "rgba(50,62,32,0.08)";
+    g.lineWidth = 1;
+    for (let y = 3; y < h; y += 6) {
+      g.beginPath();
+      g.moveTo(0, y);
+      g.lineTo(w, y + ((y / 6) % 2));
+      g.stroke();
+    }
+  }, 256, 256, true);
 }
 
 function roofTexture() {
@@ -200,23 +225,66 @@ function pushWall(pos, nrm, x0, z0, x1, z1, nx, nz, off0, off1, y0, y1, h) {
   for (let i = 0; i < 6; i++) nrm.push(0, 1, 0);
 }
 
+const ROAD_CHUNK = 1600;
+
+function emptyRoadPack() {
+  return {
+    positions: [], colors: [], uvs: [], marks: [],
+    railPos: [], railNrm: [],
+    curbPos: [], curbNrm: [],
+    walkPos: [], walkUv: [],
+    vergePos: [],
+    fencePos: [], fenceNrm: [],
+    lamps: [],
+  };
+}
+
 function makeRoads(city, index, flight) {
-  const positions = [];
-  const colors = [];
-  const uvs = [];
-  const marks = [];
+  const packs = new Map();
+  const packAt = (x, z) => {
+    const ix = Math.floor(x / ROAD_CHUNK);
+    const iz = Math.floor(z / ROAD_CHUNK);
+    const key = ix + "," + iz;
+    let pack = packs.get(key);
+    if (!pack) {
+      pack = emptyRoadPack();
+      packs.set(key, pack);
+    }
+    return pack;
+  };
+  let positions;
+  let colors;
+  let uvs;
+  let marks;
+  let railPos;
+  let railNrm;
+  let curbPos;
+  let curbNrm;
+  let walkPos;
+  let walkUv;
+  let vergePos;
+  let fencePos;
+  let fenceNrm;
+  let lamps;
+  const bind = (x, z) => {
+    const pack = packAt(x, z);
+    positions = pack.positions;
+    colors = pack.colors;
+    uvs = pack.uvs;
+    marks = pack.marks;
+    railPos = pack.railPos;
+    railNrm = pack.railNrm;
+    curbPos = pack.curbPos;
+    curbNrm = pack.curbNrm;
+    walkPos = pack.walkPos;
+    walkUv = pack.walkUv;
+    vergePos = pack.vergePos;
+    fencePos = pack.fencePos;
+    fenceNrm = pack.fenceNrm;
+    lamps = pack.lamps;
+  };
   const dashTaken = new Set();
-  const railPos = [];
-  const railNrm = [];
   const railSegs = [];
-  const curbPos = [];
-  const curbNrm = [];
-  const walkPos = [];
-  const walkUv = [];
-  const vergePos = [];
-  const fencePos = [];
-  const fenceNrm = [];
-  const lamps = [];
   const pads = new Map();
   const padPut = (x, z, y, r) => {
     const k = Math.round(x / 14) + "," + Math.round(z / 14);
@@ -242,6 +310,7 @@ function makeRoads(city, index, flight) {
         dist += L;
         continue;
       }
+      bind((x0 + x1) * 0.5, (z0 + z1) * 0.5);
       const nx = -dz / L, nz = dx / L;
       const hw0 = halfAt(k), hw1 = halfAt(k + 1);
       const y0 = yAt(k), y1 = yAt(k + 1);
@@ -380,6 +449,7 @@ function makeRoads(city, index, flight) {
   }
   const asphalt = [0.9, 0.91, 0.94];
   for (const pad of pads.values()) {
+    bind(pad.x, pad.z);
     const steps = 8;
     for (let s = 0; s < steps; s++) {
       const a0 = (s / steps) * Math.PI * 2;
@@ -393,12 +463,7 @@ function makeRoads(city, index, flight) {
       uvs.push(0, 0, 1, 0, 1, 1);
     }
   }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-  upNormals(geo);
-  const mat = new THREE.MeshLambertMaterial({
+  const roadMat = new THREE.MeshLambertMaterial({
     map: roadTexture(),
     color: 0xffffff,
     side: THREE.DoubleSide,
@@ -406,86 +471,101 @@ function makeRoads(city, index, flight) {
     polygonOffsetFactor: -2,
     polygonOffsetUnits: -2,
   });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.receiveShadow = true;
-  mesh.renderOrder = 1;
-  mesh.position.y = 0;
-  mesh.frustumCulled = false;
+  const curbMat = new THREE.MeshLambertMaterial({ color: 0xd4d0c8, side: THREE.DoubleSide });
+  const walkMat = new THREE.MeshLambertMaterial({ map: pavingTexture(), color: 0xffffff });
+  const vergeMat = new THREE.MeshLambertMaterial({ color: 0x3c7a46, side: THREE.DoubleSide });
+  const fenceMat = new THREE.MeshLambertMaterial({ color: 0x4f86a6, side: THREE.DoubleSide });
+  const markMat = new THREE.MeshBasicMaterial({ color: 0xf3efe4, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  const railMat = new THREE.MeshLambertMaterial({ color: 0xc5c8ce, side: THREE.DoubleSide });
+  const lampMat = new THREE.MeshLambertMaterial({ color: 0x2e343c });
+  const pole = new THREE.CylinderGeometry(0.07, 0.09, 4.4, 5);
+  pole.translate(0, 2.2, 0);
+  const arm = new THREE.BoxGeometry(0.85, 0.06, 0.06);
+  arm.translate(0.38, 4.35, 0);
+  const head = new THREE.BoxGeometry(0.62, 0.08, 0.24);
+  head.translate(0.78, 4.22, 0);
+  const lampGeo = joinGeos([pole, arm, head]);
   const root = new THREE.Group();
-  root.add(mesh);
-  const curb = meshPos(curbPos, new THREE.MeshLambertMaterial({ color: 0xd4d0c8, side: THREE.DoubleSide }), curbNrm);
-  if (curb) {
-    curb.renderOrder = 2;
-    root.add(curb);
-  }
-  if (walkPos.length) {
-    const wgeo = new THREE.BufferGeometry();
-    wgeo.setAttribute("position", new THREE.Float32BufferAttribute(walkPos, 3));
-    wgeo.setAttribute("uv", new THREE.Float32BufferAttribute(walkUv, 2));
-    upNormals(wgeo);
-    const walkMesh = new THREE.Mesh(wgeo, new THREE.MeshLambertMaterial({ map: pavingTexture(), color: 0xffffff }));
-    walkMesh.receiveShadow = true;
-    walkMesh.frustumCulled = false;
-    walkMesh.renderOrder = 2;
-    root.add(walkMesh);
-  }
-  const verge = meshPos(vergePos, new THREE.MeshLambertMaterial({ color: 0x3c7a46, side: THREE.DoubleSide }));
-  if (verge) {
-    verge.renderOrder = 0;
-    root.add(verge);
-  }
-  const fence = meshPos(fencePos, new THREE.MeshLambertMaterial({ color: 0x4f86a6, side: THREE.DoubleSide }), fenceNrm);
-  if (fence) {
-    fence.renderOrder = 2;
-    root.add(fence);
-  }
-  if (lamps.length) {
-    const pole = new THREE.CylinderGeometry(0.07, 0.09, 4.4, 5);
-    pole.translate(0, 2.2, 0);
-    const arm = new THREE.BoxGeometry(0.85, 0.06, 0.06);
-    arm.translate(0.38, 4.35, 0);
-    const head = new THREE.BoxGeometry(0.62, 0.08, 0.24);
-    head.translate(0.78, 4.22, 0);
-    const lampMesh = new THREE.InstancedMesh(
-      joinGeos([pole, arm, head]),
-      new THREE.MeshLambertMaterial({ color: 0x2e343c }),
-      lamps.length,
-    );
-    lampMesh.frustumCulled = false;
-    const dummy = new THREE.Object3D();
-    for (let i = 0; i < lamps.length; i++) {
-      const lamp = lamps[i];
-      dummy.position.set(lamp.x, lamp.y, lamp.z);
-      dummy.rotation.set(0, lamp.rot, 0);
-      dummy.updateMatrix();
-      lampMesh.setMatrixAt(i, dummy.matrix);
+  root.frustumCulled = false;
+  for (const pack of packs.values()) {
+    const chunk = new THREE.Group();
+    chunk.frustumCulled = false;
+    if (pack.positions.length) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.Float32BufferAttribute(pack.positions, 3));
+      geo.setAttribute("color", new THREE.Float32BufferAttribute(pack.colors, 3));
+      geo.setAttribute("uv", new THREE.Float32BufferAttribute(pack.uvs, 2));
+      upNormals(geo);
+      geo.computeBoundingSphere();
+      const mesh = new THREE.Mesh(geo, roadMat);
+      mesh.receiveShadow = true;
+      mesh.renderOrder = 1;
+      chunk.add(mesh);
     }
-    lampMesh.instanceMatrix.needsUpdate = true;
-    root.add(lampMesh);
-  }
-  if (marks.length) {
-    const mgeo = new THREE.BufferGeometry();
-    mgeo.setAttribute("position", new THREE.Float32BufferAttribute(marks, 3));
-    const mark = new THREE.Mesh(
-      mgeo,
-      new THREE.MeshBasicMaterial({ color: 0xf3efe4, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
-    );
-    mark.position.y = 0.03;
-    mark.renderOrder = 3;
-    mark.frustumCulled = false;
-    root.add(mark);
-  }
-  if (railPos.length) {
-    const rgeo = new THREE.BufferGeometry();
-    rgeo.setAttribute("position", new THREE.Float32BufferAttribute(railPos, 3));
-    rgeo.setAttribute("normal", new THREE.Float32BufferAttribute(railNrm, 3));
-    const rails = new THREE.Mesh(
-      rgeo,
-      new THREE.MeshLambertMaterial({ color: 0xc5c8ce, side: THREE.DoubleSide }),
-    );
-    rails.frustumCulled = false;
-    rails.renderOrder = 2;
-    root.add(rails);
+    const curb = meshPos(pack.curbPos, curbMat, pack.curbNrm);
+    if (curb) {
+      curb.frustumCulled = true;
+      curb.geometry.computeBoundingSphere();
+      curb.renderOrder = 2;
+      chunk.add(curb);
+    }
+    if (pack.walkPos.length) {
+      const wgeo = new THREE.BufferGeometry();
+      wgeo.setAttribute("position", new THREE.Float32BufferAttribute(pack.walkPos, 3));
+      wgeo.setAttribute("uv", new THREE.Float32BufferAttribute(pack.walkUv, 2));
+      upNormals(wgeo);
+      wgeo.computeBoundingSphere();
+      const walkMesh = new THREE.Mesh(wgeo, walkMat);
+      walkMesh.receiveShadow = true;
+      walkMesh.renderOrder = 2;
+      chunk.add(walkMesh);
+    }
+    const verge = meshPos(pack.vergePos, vergeMat);
+    if (verge) {
+      verge.frustumCulled = true;
+      verge.geometry.computeBoundingSphere();
+      chunk.add(verge);
+    }
+    const fence = meshPos(pack.fencePos, fenceMat, pack.fenceNrm);
+    if (fence) {
+      fence.frustumCulled = true;
+      fence.geometry.computeBoundingSphere();
+      fence.renderOrder = 2;
+      chunk.add(fence);
+    }
+    if (pack.lamps.length) {
+      const lampMesh = new THREE.InstancedMesh(lampGeo, lampMat, pack.lamps.length);
+      const dummy = new THREE.Object3D();
+      for (let i = 0; i < pack.lamps.length; i++) {
+        const lamp = pack.lamps[i];
+        dummy.position.set(lamp.x, lamp.y, lamp.z);
+        dummy.rotation.set(0, lamp.rot, 0);
+        dummy.updateMatrix();
+        lampMesh.setMatrixAt(i, dummy.matrix);
+      }
+      lampMesh.instanceMatrix.needsUpdate = true;
+      lampMesh.computeBoundingSphere();
+      chunk.add(lampMesh);
+    }
+    if (pack.marks.length) {
+      const mgeo = new THREE.BufferGeometry();
+      mgeo.setAttribute("position", new THREE.Float32BufferAttribute(pack.marks, 3));
+      mgeo.computeBoundingSphere();
+      const mark = new THREE.Mesh(mgeo, markMat);
+      mark.position.y = 0.03;
+      mark.renderOrder = 3;
+      chunk.add(mark);
+    }
+    if (pack.railPos.length) {
+      const rgeo = new THREE.BufferGeometry();
+      rgeo.setAttribute("position", new THREE.Float32BufferAttribute(pack.railPos, 3));
+      rgeo.setAttribute("normal", new THREE.Float32BufferAttribute(pack.railNrm, 3));
+      rgeo.computeBoundingSphere();
+      const rails = new THREE.Mesh(rgeo, railMat);
+      rails.renderOrder = 2;
+      chunk.add(rails);
+    }
+    if (chunk.children.length) root.add(chunk);
   }
   return { mesh: root, rails: railSegs };
 }
@@ -505,10 +585,16 @@ function reverseRiver(river) {
   return { p, hl, hr, w: river.w, n: river.n };
 }
 
+function copyPath(src) {
+  const out = new Array(src.length);
+  for (let i = 0; i < src.length; i++) out[i] = src[i];
+  return out;
+}
+
 function catRiver(a, b) {
-  const p = a.p.slice();
-  const hl = a.hl && b.hl ? a.hl.slice() : null;
-  const hr = a.hr && b.hr ? a.hr.slice() : null;
+  const p = copyPath(a.p);
+  const hl = a.hl && b.hl ? copyPath(a.hl) : null;
+  const hr = a.hr && b.hr ? copyPath(a.hr) : null;
   const n = b.p.length / 2;
   for (let i = 1; i < n; i++) {
     p.push(b.p[i * 2], b.p[i * 2 + 1]);
@@ -580,10 +666,16 @@ function riverSurface(river) {
     const L = Math.hypot(x1 - x0, z1 - z0);
     if (L < 0.5) continue;
     const steps = Math.max(1, Math.ceil(L / 100));
-    const l0 = river.hl ? river.hl[i] : (river.w || 80) * 0.5;
-    const l1 = river.hl ? river.hl[Math.min(n - 1, i + 1)] : (river.w || 80) * 0.5;
-    const r0 = river.hr ? river.hr[i] : (river.w || 80) * 0.5;
-    const r1 = river.hr ? river.hr[Math.min(n - 1, i + 1)] : (river.w || 80) * 0.5;
+    let l0 = river.hl ? river.hl[i] : (river.w || 80) * 0.5;
+    let l1 = river.hl ? river.hl[Math.min(n - 1, i + 1)] : (river.w || 80) * 0.5;
+    let r0 = river.hr ? river.hr[i] : (river.w || 80) * 0.5;
+    let r1 = river.hr ? river.hr[Math.min(n - 1, i + 1)] : (river.w || 80) * 0.5;
+    if ((river.w || 0) >= 400) {
+      l0 = Math.max(l0, 420);
+      l1 = Math.max(l1, 420);
+      r0 = Math.max(r0, 420);
+      r1 = Math.max(r1, 420);
+    }
     for (let s = 0; s < steps; s++) {
       const t = s / steps;
       pushSample(x0 + (x1 - x0) * t, z0 + (z1 - z0) * t, l0 + (l1 - l0) * t, r0 + (r1 - r0) * t);
@@ -593,8 +685,8 @@ function riverSurface(river) {
   pushSample(
     src[last * 2],
     src[last * 2 + 1],
-    river.hl ? river.hl[last] : (river.w || 80) * 0.5,
-    river.hr ? river.hr[last] : (river.w || 80) * 0.5,
+    Math.max(river.hl ? river.hl[last] : (river.w || 80) * 0.5, (river.w || 0) >= 400 ? 420 : 0),
+    Math.max(river.hr ? river.hr[last] : (river.w || 80) * 0.5, (river.w || 0) >= 400 ? 420 : 0),
   );
   const positions = [];
   const left = [];
@@ -709,56 +801,120 @@ function tuneWindows(mat) {
   };
 }
 
+const CITY_LAT = 50.4501;
+const CITY_LON = 30.5234;
+const CITY_M_LAT = 111320;
+const CITY_M_LON = 111320 * Math.cos((CITY_LAT * Math.PI) / 180);
+
+function worldXZ(lat, lon) {
+  return [(CITY_LON - lon) * CITY_M_LON, (lat - CITY_LAT) * CITY_M_LAT];
+}
+
+function districtOf(x, z) {
+  const lat = CITY_LAT + z / CITY_M_LAT;
+  const lon = CITY_LON - x / CITY_M_LON;
+  if (lat > 50.35 && lat < 50.405 && lon > 30.46 && lon < 30.55) return "forest";
+  if (lat > 50.53 && lat < 50.60 && lon > 30.30 && lon < 30.47) return "forest";
+  if (lat > 50.438 && lat < 50.492 && lon > 30.538 && lon < 30.592) return "forest";
+  if (lat > 50.458 && lat < 50.485 && lon > 30.500 && lon < 30.540) return "podil";
+  if (lat > 50.440 && lat < 50.462 && lon > 30.500 && lon < 30.548) return "upper";
+  if (lat > 50.486 && lat < 50.545 && lon > 30.45 && lon < 30.545) return "obolon";
+  if (lon > 30.575 && lat > 50.38 && lat < 50.56) return "left";
+  return "";
+}
+
 function makeBuildings(city, index) {
-  const list = city.buildings;
-  if (!list.length) return null;
+  const all = city.buildings;
+  if (!all.length) return null;
+  const buckets = new Map();
+  for (const b of all) {
+    const key = Math.floor(b.x / ROAD_CHUNK) + "," + Math.floor(b.z / ROAD_CHUNK);
+    let bucket = buckets.get(key);
+    if (!bucket) buckets.set(key, bucket = []);
+    bucket.push(b);
+  }
   const geo = new THREE.BoxGeometry(1, 1, 1);
   geo.translate(0, 0.5, 0);
-  const mat = new THREE.MeshLambertMaterial({ map: windowTexture(), color: 0xffffff });
-  tuneWindows(mat);
-  const mesh = new THREE.InstancedMesh(geo, mat, list.length);
-  mesh.frustumCulled = false;
   const roofGeo = new THREE.BoxGeometry(1, 1, 1);
   roofGeo.translate(0, 0.5, 0);
-  const roofs = new THREE.InstancedMesh(
-    roofGeo,
-    new THREE.MeshLambertMaterial({
-      map: roofTexture(),
-      color: 0xffffff,
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-      polygonOffsetUnits: -2,
-    }),
-    list.length,
-  );
-  roofs.frustumCulled = false;
   const plinthGeo = new THREE.BoxGeometry(1, 1, 1);
   plinthGeo.translate(0, 0.5, 0);
-  const plinths = new THREE.InstancedMesh(plinthGeo, new THREE.MeshLambertMaterial({ color: 0xcfc6b8 }), list.length);
-  plinths.frustumCulled = false;
   const corniceGeo = new THREE.BoxGeometry(1, 1, 1);
   corniceGeo.translate(0, 0.5, 0);
-  const cornices = new THREE.InstancedMesh(corniceGeo, new THREE.MeshLambertMaterial({ color: 0xf4efe6 }), list.length);
-  cornices.frustumCulled = false;
+  const bandGeo = new THREE.BoxGeometry(1, 1, 1);
+  bandGeo.translate(0, 0.5, 0);
+  const mat = new THREE.MeshLambertMaterial({ map: windowTexture(), color: 0xffffff });
+  tuneWindows(mat);
+  const roofMat = new THREE.MeshLambertMaterial({
+    map: roofTexture(),
+    color: 0xffffff,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+  });
+  const plinthMat = new THREE.MeshLambertMaterial({ color: 0xcfc6b8 });
+  const corniceMat = new THREE.MeshLambertMaterial({ color: 0xf4efe6 });
+  const bandMat = new THREE.MeshLambertMaterial({ color: 0xb7b0a4 });
+  const root = new THREE.Group();
+  root.frustumCulled = false;
+  let wallMesh = null;
+  for (const list of buckets.values()) {
+  const mesh = new THREE.InstancedMesh(geo, mat, list.length);
+  const roofs = new THREE.InstancedMesh(roofGeo, roofMat, list.length);
+  const plinths = new THREE.InstancedMesh(plinthGeo, plinthMat, list.length);
+  const cornices = new THREE.InstancedMesh(corniceGeo, corniceMat, list.length);
   let bandCount = 0;
   for (let i = 0; i < list.length; i++) {
     const b = list[i];
     if (b.h > 10 && b.w > 7 && b.d > 7 && b.k !== "church") bandCount++;
   }
-  const bandGeo = new THREE.BoxGeometry(1, 1, 1);
-  bandGeo.translate(0, 0.5, 0);
-  const bands = new THREE.InstancedMesh(bandGeo, new THREE.MeshLambertMaterial({ color: 0xb7b0a4 }), Math.max(1, bandCount * 2));
-  bands.frustumCulled = false;
+  const bands = new THREE.InstancedMesh(bandGeo, bandMat, Math.max(1, bandCount * 2));
   const dummy = new THREE.Object3D();
   const color = new THREE.Color();
-  const walls = [0xf4efe4, 0xe7d3b8, 0xf7f4ee, 0xd9c4a4, 0xe4eaf0, 0xc9b59a, 0xf0e2cc, 0xd5ddd4];
-  const roofCols = [0x8d4e3a, 0x6e645c, 0xa15a3a, 0x4e5964, 0x7a5344];
+  const walls = [0xf6efe4, 0xf0d7a4, 0xf7f4ee, 0xe7c4a8, 0xd5ddd8, 0xc9d4c4, 0xe8d0c0, 0xb9c6d4];
+  const roofCols = [0x8a3a32, 0x4e565f, 0x6a4034, 0x3c4a44, 0x6e5344, 0x5a4038];
   let band = 0;
   for (let i = 0; i < list.length; i++) {
     const b = list[i];
     const zone = Math.abs((Math.floor(b.x / 160) * 3 + Math.floor(b.z / 140) * 7) | 0);
+    let vw = b.w;
+    let vd = b.d;
     let h = b.h;
-    if (b.w * b.d > 480 && h > 22 && Math.hypot(b.x, b.z) < 1100) h = 15 + (zone % 6) * 1.5;
+    const place = districtOf(b.x, b.z);
+    let wall = walls[zone % walls.length];
+    let roof = roofCols[zone % roofCols.length];
+    if (b.k === "church") {
+      wall = 0xf6f1e6;
+      roof = 0xd7a441;
+    } else if (h > 45) {
+      wall = 0xd5e3ef;
+      roof = 0x8ea4b8;
+    } else if (place === "upper") {
+      wall = [0xf7f1e4, 0xf3e6d0, 0xefe4cc, 0xf8f4ea][zone % 4];
+      roof = [0x8d342c, 0xa34538, 0x7a3028][zone % 3];
+    } else if (place === "podil") {
+      wall = [0xe8d2ae, 0xdfc49a, 0xf0dcc0][zone % 3];
+      roof = 0x6b382c;
+      if (h < 40) h = Math.min(h, 15);
+    } else if (place === "obolon") {
+      wall = 0xd7e0ea;
+      roof = 0x8d98a4;
+      if (h >= 12 && h < 50 && vw > 12 && vd > 12) h = Math.max(h, 30 + (zone % 4) * 8);
+    } else if (place === "left") {
+      wall = [0xc8ced6, 0xb7bec8, 0xd0d4da][zone % 3];
+      roof = 0x747c86;
+      if (h > 8 && h < 40) {
+        if (vw >= vd && vw < vd * 2.4) vw *= 1.4;
+        else if (vd > vw && vd < vw * 2.4) vd *= 1.4;
+      }
+    } else if (place === "forest") {
+      wall = 0x6e8b62;
+      roof = 0x3e5c3c;
+      if (h > 7) h = 7;
+    } else {
+      if (Math.hypot(b.x, b.z) < 420) wall = [0xf7f1e4, 0xe9dcc4, 0xf3e2c0, 0xefe8dc][zone % 4];
+      if (b.k === "com") wall = 0xd5e0ea;
+    }
     let base = b.base || 0;
     if (index && b.k !== "church") {
       const near = nearestRoad(index, b.x, b.z, 14);
@@ -769,41 +925,37 @@ function makeBuildings(city, index) {
     }
     dummy.position.set(b.x, base, b.z);
     dummy.rotation.set(0, -b.rot, 0);
-    dummy.scale.set(b.w, h, b.d);
+    dummy.scale.set(vw, h, vd);
     dummy.updateMatrix();
     mesh.setMatrixAt(i, dummy.matrix);
-    let wall = walls[zone % walls.length];
-    if (Math.hypot(b.x, b.z) < 420) wall = [0xf7f1e4, 0xe9dcc4, 0xf3e2c0, 0xefe8dc][zone % 4];
-    if (b.k === "church") wall = 0xf6f1e6;
-    if (b.k === "com") wall = 0xd5e0ea;
     color.setHex(wall);
     mesh.setColorAt(i, color);
     const rh = Math.max(0.45, Math.min(1.6, h * 0.045));
     dummy.position.set(b.x, base + h - 0.02, b.z);
-    dummy.scale.set(b.w * 1.07, rh, b.d * 1.07);
+    dummy.scale.set(vw * 1.07, rh, vd * 1.07);
     dummy.updateMatrix();
     roofs.setMatrixAt(i, dummy.matrix);
-    color.setHex(b.k === "church" ? 0xd7a441 : roofCols[zone % roofCols.length]);
+    color.setHex(roof);
     roofs.setColorAt(i, color);
     dummy.position.set(b.x, base, b.z);
-    dummy.scale.set(b.w * 1.04, Math.min(1.15, h * 0.08), b.d * 1.04);
+    dummy.scale.set(vw * 1.04, Math.min(1.15, h * 0.08), vd * 1.04);
     dummy.updateMatrix();
     plinths.setMatrixAt(i, dummy.matrix);
     color.setHex(b.k === "com" ? 0x8ea0b0 : 0xc8bfb2);
     plinths.setColorAt(i, color);
     dummy.position.set(b.x, base + h - 0.4, b.z);
-    dummy.scale.set(b.w * 1.03, 0.26, b.d * 1.03);
+    dummy.scale.set(vw * 1.03, 0.26, vd * 1.03);
     dummy.updateMatrix();
     cornices.setMatrixAt(i, dummy.matrix);
     color.setHex(0xf6f1e8);
     cornices.setColorAt(i, color);
     if (b.h > 10 && b.w > 7 && b.d > 7 && b.k !== "church") {
       const yaw = -b.rot;
-      const ox = Math.cos(yaw) * (b.w * 0.5 + 0.22);
-      const oz = -Math.sin(yaw) * (b.w * 0.5 + 0.22);
+      const ox = Math.cos(yaw) * (vw * 0.5 + 0.22);
+      const oz = -Math.sin(yaw) * (vw * 0.5 + 0.22);
       for (const lift of [0.42, 0.68]) {
         dummy.position.set(b.x + ox, base + h * lift, b.z + oz);
-        dummy.scale.set(0.55, 0.12, Math.max(2.2, b.d * 0.72));
+        dummy.scale.set(0.55, 0.12, Math.max(2.2, vd * 0.72));
         dummy.updateMatrix();
         bands.setMatrixAt(band, dummy.matrix);
         color.setHex(zone % 2 ? 0xc4bbae : 0x9aa7b2);
@@ -818,11 +970,16 @@ function makeBuildings(city, index) {
     if (part.instanceColor) part.instanceColor.needsUpdate = true;
     part.receiveShadow = true;
     part.castShadow = false;
+    if (part.count > 0) part.computeBoundingSphere();
   }
   const group = new THREE.Group();
+  group.frustumCulled = false;
   group.add(mesh, plinths, roofs, cornices, bands);
-  group.userData.walls = mesh;
-  return group;
+  if (!wallMesh) wallMesh = mesh;
+  root.add(group);
+  }
+  root.userData.walls = wallMesh;
+  return root;
 }
 
 function makeTrees(city, step, index) {
@@ -924,23 +1081,26 @@ function put(g, geo, mat, x, y, z) {
   return m;
 }
 
-function namePlate(text) {
+function namePlate(text, aerial = false) {
   const c = document.createElement("canvas");
-  c.width = 640;
-  c.height = 160;
+  c.width = aerial ? 1024 : 640;
+  c.height = aerial ? 256 : 160;
   const ctx = c.getContext("2d");
-  ctx.clearRect(0, 0, 640, 160);
-  ctx.fillStyle = "rgba(10,14,22,0.8)";
-  ctx.fillRect(12, 36, 616, 96);
-  ctx.fillStyle = "#f2c14e";
-  ctx.font = `700 ${text.length > 18 ? 40 : 52}px system-ui, Segoe UI, sans-serif`;
+  ctx.clearRect(0, 0, c.width, c.height);
+  ctx.fillStyle = "rgba(10,14,22,0.78)";
+  const pad = aerial ? 28 : 12;
+  ctx.fillRect(pad, aerial ? 40 : 36, c.width - pad * 2, aerial ? 176 : 96);
+  ctx.fillStyle = aerial ? "#f4f7fb" : "#f2c14e";
+  const size = aerial ? (text.length > 12 ? 92 : 118) : (text.length > 18 ? 40 : 52);
+  ctx.font = `700 ${size}px system-ui, Segoe UI, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(text, 320, 84);
+  ctx.fillText(text, c.width / 2, c.height / 2);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
-  sp.scale.set(42, 10.5, 1);
+  sp.scale.set(aerial ? 280 : 42, aerial ? 70 : 10.5, 1);
+  sp.renderOrder = aerial ? 12 : 6;
   return sp;
 }
 
@@ -959,6 +1119,28 @@ function cathedral(g, walls, gold, w, d, h, domes) {
   onion(g, gold, domes * 0.55, w * 0.28, h + 1.2, -d * 0.18);
   onion(g, gold, domes * 0.48, -w * 0.28, h + 0.8, d * 0.22);
   onion(g, gold, domes * 0.48, w * 0.28, h + 0.8, d * 0.22);
+}
+
+function clearOfRunway(x, z, halfX, halfZ, fields) {
+  for (const f of fields || []) {
+    const fx = Math.sin(f.h);
+    const fz = Math.cos(f.h);
+    const rx = Math.cos(f.h);
+    const rz = -Math.sin(f.h);
+    const along = (x - f.x) * fx + (z - f.z) * fz;
+    const lat = (x - f.x) * rx + (z - f.z) * rz;
+    const halfAlong = Math.abs(halfX * fx) + Math.abs(halfZ * fz);
+    const halfLat = Math.abs(halfX * rx) + Math.abs(halfZ * rz);
+    const hw = Math.max(14, (f.wid || 30) * 0.5);
+    if (Math.abs(along) > f.len * 0.5 + halfAlong) continue;
+    const limit = hw + 20 + halfLat;
+    if (Math.abs(lat) >= limit) continue;
+    const sign = lat < 0 ? -1 : 1;
+    const shift = sign * limit - lat;
+    x += rx * shift;
+    z += rz * shift;
+  }
+  return { x, z };
 }
 
 function landmark(sight) {
@@ -982,17 +1164,17 @@ function landmark(sight) {
     put(g, new THREE.BoxGeometry(0.35, 6, 3.2), gold, 1.1, 60, 0);
     top = 68;
   } else if (id === "lavra") {
-    plaza(16);
-    cathedral(g, stone, gold, 22, 16, 12, 3.2);
-    put(g, new THREE.CylinderGeometry(3.2, 4.2, 46, 10), stone, 16, 23, 6);
-    onion(g, gold, 3.4, 16, 49, 6);
-    top = 58;
+    plaza(34);
+    cathedral(g, stone, gold, 42, 30, 20, 6.4);
+    put(g, new THREE.CylinderGeometry(6.2, 8, 78, 10), stone, 26, 39, 10);
+    onion(g, gold, 6.4, 26, 86, 10);
+    top = 108;
   } else if (id === "mykhailivsky") {
-    plaza(14);
-    cathedral(g, blue, gold, 20, 14, 11, 3.4);
-    put(g, new THREE.CylinderGeometry(2.2, 2.6, 22, 8), blue, -12, 11, 4);
-    onion(g, gold, 2.2, -12, 24, 4);
-    top = 32;
+    plaza(26);
+    cathedral(g, blue, gold, 40, 28, 18, 6.8);
+    put(g, new THREE.CylinderGeometry(4, 5, 40, 8), blue, -22, 20, 8);
+    onion(g, gold, 4.2, -22, 44, 8);
+    top = 62;
   } else if (id === "sophia" || icon === "dome") {
     plaza(16);
     cathedral(g, stone, gold, 26, 18, 13, 3.6);
@@ -1014,18 +1196,18 @@ function landmark(sight) {
     onion(g, gold, 2.6, 0, 24, 0);
     top = 32;
   } else if (id === "motherland" || icon === "mother") {
-    plaza(14);
-    put(g, new THREE.CylinderGeometry(8, 10, 3, 8), stone, 0, 1.5, 0);
-    put(g, new THREE.CylinderGeometry(2.2, 5.5, 28, 7), stone, 0, 17, 0);
-    put(g, new THREE.SphereGeometry(2.3, 8, 6), stone, 0, 33, 0);
-    put(g, new THREE.BoxGeometry(0.7, 22, 0.7), gold, 1.6, 46, 0);
-    put(g, new THREE.BoxGeometry(7, 8, 0.6), new THREE.MeshLambertMaterial({ color: 0xc4552a }), -3.2, 24, 0.4);
-    top = 62;
+    plaza(28);
+    put(g, new THREE.CylinderGeometry(18, 24, 10, 8), stone, 0, 5, 0);
+    put(g, new THREE.CylinderGeometry(4.6, 10, 52, 7), stone, 0, 36, 0);
+    put(g, new THREE.SphereGeometry(4.6, 8, 6), stone, 0, 66, 0);
+    put(g, new THREE.BoxGeometry(1.4, 36, 1.4), gold, 3.4, 82, 0);
+    put(g, new THREE.BoxGeometry(16, 18, 1.2), new THREE.MeshLambertMaterial({ color: 0xc4552a }), -7, 46, 0.8);
+    top = 108;
   } else if (icon === "arch") {
-    put(g, new THREE.TorusGeometry(16, 1.35, 8, 20, Math.PI), gold, 0, 0, 0);
-    put(g, new THREE.BoxGeometry(2.4, 3, 2.4), stone, -16, 1.5, 0);
-    put(g, new THREE.BoxGeometry(2.4, 3, 2.4), stone, 16, 1.5, 0);
-    top = 22;
+    put(g, new THREE.TorusGeometry(48, 3.6, 10, 28, Math.PI), gold, 0, 0, 0);
+    put(g, new THREE.BoxGeometry(5, 8, 5), stone, -48, 4, 0);
+    put(g, new THREE.BoxGeometry(5, 8, 5), stone, 48, 4, 0);
+    top = 58;
   } else if (id === "bessarabka" || icon === "market") {
     plaza(14);
     put(g, new THREE.BoxGeometry(26, 10, 20), stone, 0, 5, 0);
@@ -1038,10 +1220,11 @@ function landmark(sight) {
     }
     top = 24;
   } else if (icon === "stadium") {
-    put(g, new THREE.CylinderGeometry(34, 38, 10, 16), new THREE.MeshLambertMaterial({ color: 0xd8dde4 }), 0, 5, 0);
-    put(g, new THREE.CylinderGeometry(20, 20, 0.5, 16), new THREE.MeshLambertMaterial({ color: 0x3d8f45 }), 0, 10.2, 0);
-    put(g, new THREE.TorusGeometry(30, 1.4, 6, 18), new THREE.MeshLambertMaterial({ color: 0xf4f7fb }), 0, 11, 0);
-    top = 18;
+    put(g, new THREE.CylinderGeometry(120, 136, 24, 24), new THREE.MeshLambertMaterial({ color: 0xd8dde4 }), 0, 12, 0);
+    put(g, new THREE.CylinderGeometry(74, 74, 1.4, 24), new THREE.MeshLambertMaterial({ color: 0x3d8f45 }), 0, 24.2, 0);
+    const ring = put(g, new THREE.TorusGeometry(112, 3.4, 8, 28), new THREE.MeshLambertMaterial({ color: 0xf4f7fb }), 0, 26, 0);
+    ring.rotation.x = Math.PI / 2;
+    top = 32;
   } else if (icon === "bridge") {
     put(g, new THREE.BoxGeometry(2.4, 28, 2.4), stone, -14, 14, 8);
     put(g, new THREE.BoxGeometry(2.4, 28, 2.4), stone, 14, 14, 8);
@@ -1059,6 +1242,7 @@ function landmark(sight) {
     put(g, new THREE.BoxGeometry(54, 9, 16), new THREE.MeshLambertMaterial({ color: 0xe8eef4 }), 0, 4.5, 0);
     put(g, new THREE.BoxGeometry(78, 1.1, 14), blue, 0, 9.2, 0);
     put(g, new THREE.BoxGeometry(8, 6, 22), blue, -8, 8, 0);
+    g.userData.foot = [39, 11];
     top = 16;
   } else if (icon === "island") {
     put(g, new THREE.SphereGeometry(12, 8, 5), new THREE.MeshLambertMaterial({ color: 0x2f8a48, flatShading: true }), 0, 2, 0);
@@ -1650,12 +1834,231 @@ function makePlane() {
   return g;
 }
 
+function flatDisc(lat, lon, rx, rz, color, lift) {
+  const [x, z] = worldXZ(lat, lon);
+  const geo = new THREE.CircleGeometry(1, 32);
+  geo.rotateX(-Math.PI / 2);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color }));
+  mesh.position.set(x, heightAt(x, z) + lift, z);
+  mesh.scale.set(rx, 1, rz);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = 3;
+  return mesh;
+}
+
+function kyivBluff() {
+  const ridge = [
+    [50.4608, 30.5235],
+    [50.4568, 30.5285],
+    [50.4522, 30.5345],
+    [50.4476, 30.54],
+    [50.4424, 30.5475],
+    [50.4372, 30.5545],
+    [50.4324, 30.5605],
+    [50.4272, 30.5655],
+    [50.4228, 30.5705],
+  ];
+  const pts = ridge.map(([lat, lon]) => {
+    const [x, z] = worldXZ(lat, lon);
+    const [bx, bz] = worldXZ(lat, lon + 0.0032);
+    return { x, z, y: heightAt(x, z), bx, bz, by: heightAt(bx, bz) };
+  });
+  const pos = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    if (a.y - a.by < 8 && b.y - b.by < 8) continue;
+    const ay = a.y + 1.2;
+    const by = b.y + 1.2;
+    const aBase = Math.min(a.by, ay - 6) + 0.8;
+    const bBase = Math.min(b.by, by - 6) + 0.8;
+    pos.push(a.x, ay, a.z, b.x, by, b.z, b.bx, bBase, b.bz);
+    pos.push(a.x, ay, a.z, b.bx, bBase, b.bz, a.bx, aBase, a.bz);
+  }
+  const mesh = meshFrom(pos, 0x3f6b3e, 1);
+  if (mesh) {
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 2;
+  }
+  return mesh;
+}
+
+function spanBridge(aLat, aLon, bLat, bLon, kind) {
+  const [x0, z0] = worldXZ(aLat, aLon);
+  const [x1, z1] = worldXZ(bLat, bLon);
+  const dx = x1 - x0;
+  const dz = z1 - z0;
+  const len = Math.hypot(dx, dz);
+  if (len < 40) return null;
+  const mx = (x0 + x1) * 0.5;
+  const mz = (z0 + z1) * 0.5;
+  const deckY = Math.max(heightAt(mx, mz) + 16, (heightAt(x0, z0) + heightAt(x1, z1)) * 0.5);
+  const g = new THREE.Group();
+  const deckMat = new THREE.MeshLambertMaterial({ color: kind === "girder" ? 0xd7dde4 : 0xc5ced6 });
+  const pierMat = new THREE.MeshLambertMaterial({ color: 0x9aa3ab });
+  const accent = new THREE.MeshLambertMaterial({ color: 0xe7eef4 });
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(46, 3.2, len), deckMat);
+  deck.position.y = deckY;
+  g.add(deck);
+  const piers = Math.max(2, Math.round(len / 240));
+  for (let i = 0; i <= piers; i++) {
+    const pier = new THREE.Mesh(new THREE.BoxGeometry(10, 26, 14), pierMat);
+    pier.position.set(0, deckY - 12, -len * 0.5 + (len * i) / piers);
+    g.add(pier);
+  }
+  if (kind === "pylon") {
+    const pylon = new THREE.Mesh(new THREE.BoxGeometry(7, 96, 10), accent);
+    pylon.position.set(0, deckY + 48, 0);
+    g.add(pylon);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(52, 2.6, 8), accent);
+    arm.position.set(0, deckY + 82, 0);
+    g.add(arm);
+  } else if (kind === "arch") {
+    const arch = new THREE.Mesh(new THREE.TorusGeometry(Math.min(210, len * 0.24), 4.2, 8, 20, Math.PI), accent);
+    arch.rotation.y = Math.PI / 2;
+    arch.position.set(0, deckY, 0);
+    g.add(arch);
+  }
+  g.position.set(mx, 0, mz);
+  g.rotation.y = Math.atan2(dx, dz);
+  g.frustumCulled = false;
+  return g;
+}
+
+function dressKyiv(scene) {
+  scene.add(flatDisc(50.47, 30.552, 780, 1500, 0x2c8a42, 2.4));
+  scene.add(flatDisc(50.4455, 30.576, 520, 980, 0x2f8f46, 2.4));
+  scene.add(flatDisc(50.455, 30.568, 380, 760, 0x348a48, 2.4));
+  scene.add(flatDisc(50.368, 30.495, 1700, 1500, 0x2a6b3a, 1.4));
+  scene.add(flatDisc(50.555, 30.38, 1900, 1600, 0x246338, 1.4));
+  const bluff = kyivBluff();
+  if (bluff) scene.add(bluff);
+  for (const bridge of [
+    spanBridge(50.4902, 30.522, 50.491, 30.558, "pylon"),
+    spanBridge(50.4438, 30.5615, 50.4412, 30.5785, "arch"),
+    spanBridge(50.4268, 30.569, 50.4256, 30.5985, "girder"),
+    spanBridge(50.3982, 30.568, 50.3948, 30.608, "pylon"),
+  ]) {
+    if (bridge) scene.add(bridge);
+  }
+}
+
+function ringHolds(x, z, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 2; i < ring.length; i += 2) {
+    const xi = ring[i];
+    const zi = ring[i + 1];
+    const xj = ring[j];
+    const zj = ring[j + 1];
+    if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi || 1e-9) + xi) inside = !inside;
+    j = i;
+  }
+  return inside;
+}
+
+function buildWaterMask(city) {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  const take = (x, z) => {
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (z < minZ) minZ = z;
+    if (z > maxZ) maxZ = z;
+  };
+  for (const river of city.rivers || []) {
+    const p = river.p;
+    if (!p) continue;
+    for (let i = 0; i < p.length; i += 2) take(p[i], p[i + 1]);
+  }
+  for (const lake of city.lakes || []) {
+    for (let i = 0; i < lake.length; i += 2) take(lake[i], lake[i + 1]);
+  }
+  if (!Number.isFinite(minX)) return null;
+  const cell = 16;
+  const pad = 400;
+  const originX = minX - pad;
+  const originZ = minZ - pad;
+  const cols = Math.max(1, Math.ceil((maxX - minX + pad * 2) / cell));
+  const rows = Math.max(1, Math.ceil((maxZ - minZ + pad * 2) / cell));
+  if (cols * rows > 12000000) return null;
+  const bits = new Uint8Array((cols * rows + 7) >> 3);
+  const mark = (x, z) => {
+    const c = Math.floor((x - originX) / cell);
+    const r = Math.floor((z - originZ) / cell);
+    if (c < 0 || r < 0 || c >= cols || r >= rows) return;
+    const i = r * cols + c;
+    bits[i >> 3] |= 1 << (i & 7);
+  };
+  const stamp = (x, z, rad) => {
+    const reach = Math.max(cell, rad);
+    const c0 = Math.max(0, Math.floor((x - reach - originX) / cell));
+    const c1 = Math.min(cols - 1, Math.floor((x + reach - originX) / cell));
+    const r0 = Math.max(0, Math.floor((z - reach - originZ) / cell));
+    const r1 = Math.min(rows - 1, Math.floor((z + reach - originZ) / cell));
+    const rad2 = reach * reach;
+    for (let r = r0; r <= r1; r++) {
+      const wz = originZ + (r + 0.5) * cell;
+      const dz = wz - z;
+      for (let c = c0; c <= c1; c++) {
+        const wx = originX + (c + 0.5) * cell;
+        const dx = wx - x;
+        if (dx * dx + dz * dz > rad2) continue;
+        const i = r * cols + c;
+        bits[i >> 3] |= 1 << (i & 7);
+      }
+    }
+  };
+  for (const river of city.rivers || []) {
+    const p = river.p;
+    if (!p || p.length < 4) continue;
+    const n = p.length / 2;
+    for (let i = 0; i < n - 1; i++) {
+      const x0 = p[i * 2];
+      const z0 = p[i * 2 + 1];
+      const x1 = p[(i + 1) * 2];
+      const z1 = p[(i + 1) * 2 + 1];
+      const len = Math.hypot(x1 - x0, z1 - z0);
+      const h0 = river.hl && river.hr ? Math.min(river.hl[i], river.hr[i]) : (river.w || 40) * 0.5;
+      const h1 = river.hl && river.hr ? Math.min(river.hl[i + 1], river.hr[i + 1]) : (river.w || 40) * 0.5;
+      const steps = Math.max(1, Math.ceil(len / 12));
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps;
+        stamp(x0 + (x1 - x0) * t, z0 + (z1 - z0) * t, h0 + (h1 - h0) * t);
+      }
+    }
+  }
+  for (const lake of city.lakes || []) {
+    if (!lake || lake.length < 6) continue;
+    let lx0 = Infinity, lx1 = -Infinity, lz0 = Infinity, lz1 = -Infinity;
+    for (let i = 0; i < lake.length; i += 2) {
+      lx0 = Math.min(lx0, lake[i]);
+      lx1 = Math.max(lx1, lake[i]);
+      lz0 = Math.min(lz0, lake[i + 1]);
+      lz1 = Math.max(lz1, lake[i + 1]);
+    }
+    const c0 = Math.max(0, Math.floor((lx0 - originX) / cell));
+    const c1 = Math.min(cols - 1, Math.floor((lx1 - originX) / cell));
+    const r0 = Math.max(0, Math.floor((lz0 - originZ) / cell));
+    const r1 = Math.min(rows - 1, Math.floor((lz1 - originZ) / cell));
+    for (let r = r0; r <= r1; r++) {
+      const z = originZ + (r + 0.5) * cell;
+      for (let c = c0; c <= c1; c++) {
+        const x = originX + (c + 0.5) * cell;
+        if (ringHolds(x, z, lake)) mark(x, z);
+      }
+    }
+  }
+  return { originX, originZ, cell, cols, rows, bits };
+}
+
 export function createWorld(city, index, flight = false) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(TIMES[1].bg);
   scene.fog = new THREE.Fog(TIMES[1].fog, 980, 5600);
 
-  const hemi = new THREE.HemisphereLight(0xe7f2ff, 0x7d9a62, 1.08);
+  const hemi = new THREE.HemisphereLight(0xe7f2ff, 0x5f7a42, 0.62);
   const sun = new THREE.DirectionalLight(0xfff6e4, 1.45);
   sun.position.set(80, 140, 40);
   sun.castShadow = true;
@@ -1680,19 +2083,62 @@ export function createWorld(city, index, flight = false) {
       uniforms: {
         top: { value: new THREE.Color(0x6eaddf) },
         horizon: { value: new THREE.Color(0xd5e6f4) },
+        sunColor: { value: new THREE.Color(TIMES[1].sun) },
+        sunDir: { value: new THREE.Vector3(80, 140, 40).normalize() },
       },
       vertexShader: "varying vec3 vP; #include <common>\n#include <logdepthbuf_pars_vertex>\nvoid main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); #include <logdepthbuf_vertex>\n}",
-      fragmentShader: "varying vec3 vP; uniform vec3 top; uniform vec3 horizon; #include <common>\n#include <logdepthbuf_pars_fragment>\nvoid main(){ float h = clamp(normalize(vP).y * 1.15 + 0.08, 0.0, 1.0); gl_FragColor = vec4(mix(horizon, top, pow(h, 0.85)), 1.0); #include <logdepthbuf_fragment>\n}",
+      fragmentShader: [
+        "varying vec3 vP;",
+        "uniform vec3 top;",
+        "uniform vec3 horizon;",
+        "uniform vec3 sunColor;",
+        "uniform vec3 sunDir;",
+        "#include <common>",
+        "#include <logdepthbuf_pars_fragment>",
+        "void main(){",
+        "  vec3 dir = normalize(vP);",
+        "  float h = clamp(dir.y * 1.15 + 0.08, 0.0, 1.0);",
+        "  vec3 col = mix(horizon, top, pow(h, 0.85));",
+        "  float sun = dot(dir, normalize(sunDir));",
+        "  float glow = pow(max(sun, 0.0), 5.0);",
+        "  col += sunColor * glow * 0.45;",
+        "  gl_FragColor = vec4(col, 1.0);",
+        "  #include <logdepthbuf_fragment>",
+        "}",
+      ].join("\n"),
     }),
   );
   sky.renderOrder = -2;
   sky.frustumCulled = false;
   scene.add(sky);
 
+  const sunTex = canvasTex((g, w, h) => {
+    const grd = g.createRadialGradient(w / 2, h / 2, w * 0.06, w / 2, h / 2, w * 0.5);
+    grd.addColorStop(0, "rgba(255,253,240,1)");
+    grd.addColorStop(0.16, "rgba(255,236,160,0.95)");
+    grd.addColorStop(0.42, "rgba(255,190,80,0.22)");
+    grd.addColorStop(1, "rgba(255,170,40,0)");
+    g.fillStyle = grd;
+    g.fillRect(0, 0, w, h);
+  }, 128, 128);
+  const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: sunTex,
+    color: 0xfff4cc,
+    fog: false,
+    depthWrite: false,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+  }));
+  sunGlow.scale.set(720, 720, 1);
+  sunGlow.renderOrder = -1;
+  sunGlow.frustumCulled = false;
+  scene.add(sunGlow);
+
   const groundSeg = 168;
   const groundGeo = new THREE.BufferGeometry();
   const groundPos = new Float32Array((groundSeg + 1) * (groundSeg + 1) * 3);
   const groundCol = new Float32Array((groundSeg + 1) * (groundSeg + 1) * 3);
+  const groundUv = new Float32Array((groundSeg + 1) * (groundSeg + 1) * 2);
   const groundIdx = [];
   for (let iz = 0; iz < groundSeg; iz++) {
     for (let ix = 0; ix < groundSeg; ix++) {
@@ -1702,10 +2148,11 @@ export function createWorld(city, index, flight = false) {
   }
   groundGeo.setAttribute("position", new THREE.BufferAttribute(groundPos, 3));
   groundGeo.setAttribute("color", new THREE.BufferAttribute(groundCol, 3));
+  groundGeo.setAttribute("uv", new THREE.BufferAttribute(groundUv, 2));
   groundGeo.setIndex(groundIdx);
   const ground = new THREE.Mesh(
     groundGeo,
-    new THREE.MeshLambertMaterial({ vertexColors: true }),
+    new THREE.MeshLambertMaterial({ map: landTexture(), vertexColors: true }),
   );
   ground.renderOrder = -1;
   ground.material.polygonOffset = true;
@@ -1713,62 +2160,109 @@ export function createWorld(city, index, flight = false) {
   ground.material.polygonOffsetUnits = 2;
   ground.receiveShadow = true;
   ground.frustumCulled = false;
-  const landTint = (h, i, x, z) => {
+  const fieldBook = [
+    [0.28, 0.5, 0.18],
+    [0.62, 0.52, 0.2],
+    [0.36, 0.58, 0.22],
+    [0.14, 0.32, 0.12],
+    [0.5, 0.38, 0.18],
+    [0.24, 0.44, 0.16],
+  ];
+  const fieldHash = (ix, iz) => {
+    const n = Math.sin(ix * 127.1 + iz * 311.7) * 43758.5453;
+    return n - Math.floor(n);
+  };
+  const fieldAtCell = (ix, iz) => fieldBook[Math.floor(fieldHash(ix, iz) * fieldBook.length)];
+  const mixField = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  const landTint = (col, h, i, x, z) => {
     const elev = Math.max(0, Math.min(1, (h - 88) / 70));
-    const fx = Math.floor(x / 380 + z * 0.00015);
-    const fz = Math.floor(z / 460 - x * 0.00012);
-    const n = Math.sin(fx * 127.1 + fz * 311.7) * 43758.5453;
-    const pick = n - Math.floor(n);
-    const fields = [
-      [0.22, 0.48, 0.16],
-      [0.58, 0.5, 0.18],
-      [0.34, 0.56, 0.2],
-      [0.12, 0.28, 0.1],
-      [0.46, 0.36, 0.16],
-      [0.28, 0.42, 0.14],
-    ];
-    const tone = fields[Math.floor(pick * fields.length)];
+    const sx = 1500;
+    const sz = 1800;
+    const ix = Math.floor(x / sx);
+    const iz = Math.floor(z / sz);
+    const fx = (x / sx) - ix;
+    const fz = (z / sz) - iz;
+    const ux = fx * fx * (3 - 2 * fx);
+    const uz = fz * fz * (3 - 2 * fz);
+    const ab = mixField(fieldAtCell(ix, iz), fieldAtCell(ix + 1, iz), ux);
+    const cd = mixField(fieldAtCell(ix, iz + 1), fieldAtCell(ix + 1, iz + 1), ux);
+    const tone = mixField(ab, cd, uz);
     const damp = Math.max(0, 0.4 - elev);
-    const high = elev * 0.06;
-    groundCol[i] = tone[0] + high - damp * 0.04;
-    groundCol[i + 1] = tone[1] - high * 0.4 - damp * 0.03;
-    groundCol[i + 2] = tone[2] + damp * 0.04;
+    const high = elev * 0.07;
+    col[i] = tone[0] + high - damp * 0.04;
+    col[i + 1] = tone[1] - high * 0.35 - damp * 0.03;
+    col[i + 2] = tone[2] + damp * 0.04;
+  };
+  const waterMask = buildWaterMask(city);
+  const wetAt = (x, z) => {
+    if (!waterMask) return false;
+    const c = Math.floor((x - waterMask.originX) / waterMask.cell);
+    const row = Math.floor((z - waterMask.originZ) / waterMask.cell);
+    if (c < 0 || row < 0 || c >= waterMask.cols || row >= waterMask.rows) return false;
+    const bit = row * waterMask.cols + c;
+    return (waterMask.bits[bit >> 3] & (1 << (bit & 7))) !== 0;
   };
   const groundRaw = new Float32Array((groundSeg + 1) * (groundSeg + 1));
-  const reshapeGround = (cx, cz, span) => {
+  const scratchPos = new Float32Array(groundPos.length);
+  const scratchCol = new Float32Array(groundCol.length);
+  const scratchUv = new Float32Array(groundUv.length);
+  const scratchRaw = new Float32Array(groundRaw.length);
+  const nVert = groundSeg + 1;
+  const writeRawRow = (pos, uv, raw, iz, cx, cz, span) => {
     const step = span / groundSeg;
     const x0 = cx - span / 2;
     const z0 = cz - span / 2;
-    const n = groundSeg + 1;
-    for (let iz = 0; iz <= groundSeg; iz++) {
-      for (let ix = 0; ix <= groundSeg; ix++) {
-        const x = x0 + ix * step;
-        const z = z0 + iz * step;
-        groundRaw[iz * n + ix] = heightAt(x, z);
-        const v = (iz * n + ix) * 3;
-        groundPos[v] = x;
-        groundPos[v + 2] = z;
+    for (let ix = 0; ix <= groundSeg; ix++) {
+      const x = x0 + ix * step;
+      const z = z0 + iz * step;
+      raw[iz * nVert + ix] = heightAt(x, z);
+      const v = (iz * nVert + ix) * 3;
+      pos[v] = x;
+      pos[v + 2] = z;
+      const u = (iz * nVert + ix) * 2;
+      uv[u] = x / 520;
+      uv[u + 1] = z / 520;
+    }
+  };
+  const writeShadeRow = (pos, col, raw, iz) => {
+    for (let ix = 0; ix <= groundSeg; ix++) {
+      const h = raw[iz * nVert + ix];
+      let low = h;
+      if (ix > 0) low = Math.min(low, raw[iz * nVert + ix - 1]);
+      if (ix + 1 < nVert) low = Math.min(low, raw[iz * nVert + ix + 1]);
+      if (iz > 0) low = Math.min(low, raw[(iz - 1) * nVert + ix]);
+      if (iz + 1 < nVert) low = Math.min(low, raw[(iz + 1) * nVert + ix]);
+      const v = (iz * nVert + ix) * 3;
+      pos[v + 1] = Math.min(h, (h * 2 + low) / 3) - 0.3;
+      landTint(col, h, v, pos[v], pos[v + 2]);
+      if (wetAt(pos[v], pos[v + 2])) {
+        pos[v + 1] = Math.min(pos[v + 1], h - 1.8);
+        col[v] = 0.05;
+        col[v + 1] = 0.2;
+        col[v + 2] = 0.36;
       }
     }
-    for (let iz = 0; iz <= groundSeg; iz++) {
-      for (let ix = 0; ix <= groundSeg; ix++) {
-        const h = groundRaw[iz * n + ix];
-        let low = h;
-        if (ix > 0) low = Math.min(low, groundRaw[iz * n + ix - 1]);
-        if (ix + 1 < n) low = Math.min(low, groundRaw[iz * n + ix + 1]);
-        if (iz > 0) low = Math.min(low, groundRaw[(iz - 1) * n + ix]);
-        if (iz + 1 < n) low = Math.min(low, groundRaw[(iz + 1) * n + ix]);
-        const v = (iz * n + ix) * 3;
-        groundPos[v + 1] = Math.min(h, (h * 2 + low) / 3) - 0.3;
-        landTint(h, v, groundPos[v], groundPos[v + 2]);
-        if (waterAt(index, groundPos[v], groundPos[v + 2])) {
-          groundPos[v + 1] = Math.min(groundPos[v + 1], h - 1.8);
-          groundCol[v] = 0.05;
-          groundCol[v + 1] = 0.2;
-          groundCol[v + 2] = 0.36;
-        }
-      }
-    }
+  };
+  const uploadGround = (cx, cz, span) => {
+    groundGeo.attributes.position.needsUpdate = true;
+    groundGeo.attributes.color.needsUpdate = true;
+    groundGeo.attributes.uv.needsUpdate = true;
+    groundGeo.computeVertexNormals();
+    ground.userData.cx = cx;
+    ground.userData.cz = cz;
+    ground.userData.span = span;
+  };
+  let groundJob = null;
+  const fillGround = (pos, col, uv, raw, cx, cz, span) => {
+    for (let iz = 0; iz <= groundSeg; iz++) writeRawRow(pos, uv, raw, iz, cx, cz, span);
+    for (let iz = 0; iz <= groundSeg; iz++) writeShadeRow(pos, col, raw, iz);
+  };
+  const reshapeGround = (cx, cz, span) => {
+    fillGround(groundPos, groundCol, groundUv, groundRaw, cx, cz, span);
+    const step = span / groundSeg;
+    const x0 = cx - span / 2;
+    const z0 = cz - span / 2;
+    const n = nVert;
     if (!flight && step < 80) {
       const seen = new Set();
       const groups = cellsAround(index.roadCells, cx, cz, Math.ceil(span / 2 / 80) + 1);
@@ -1811,12 +2305,34 @@ export function createWorld(city, index, flight = false) {
         }
       }
     }
-    groundGeo.attributes.position.needsUpdate = true;
-    groundGeo.attributes.color.needsUpdate = true;
-    groundGeo.computeVertexNormals();
-    ground.userData.cx = cx;
-    ground.userData.cz = cz;
-    ground.userData.span = span;
+    uploadGround(cx, cz, span);
+  };
+  const scheduleGround = (cx, cz, span) => {
+    if (groundJob && Math.hypot(groundJob.cx - cx, groundJob.cz - cz) < 400 && Math.abs(groundJob.span - span) < span * 0.08) return;
+    groundJob = { cx, cz, span, row: 0, phase: "raw" };
+  };
+  const pumpGround = (rows) => {
+    const job = groundJob;
+    if (!job) return;
+    const end = Math.min(groundSeg, job.row + rows - 1);
+    if (job.phase === "raw") {
+      for (let iz = job.row; iz <= end; iz++) writeRawRow(scratchPos, scratchUv, scratchRaw, iz, job.cx, job.cz, job.span);
+    } else {
+      for (let iz = job.row; iz <= end; iz++) writeShadeRow(scratchPos, scratchCol, scratchRaw, iz);
+    }
+    job.row = end + 1;
+    if (job.row <= groundSeg) return;
+    if (job.phase === "raw") {
+      job.phase = "shade";
+      job.row = 0;
+      return;
+    }
+    groundPos.set(scratchPos);
+    groundCol.set(scratchCol);
+    groundUv.set(scratchUv);
+    groundRaw.set(scratchRaw);
+    uploadGround(job.cx, job.cz, job.span);
+    groundJob = null;
   };
   const home = flight && city.fields?.length ? (city.fields.find((f) => f.icao === "UKKK") || city.fields[0]) : null;
   reshapeGround(home?.x ?? city.spawn?.x ?? 0, home?.z ?? city.spawn?.z ?? 0, 9000);
@@ -1844,14 +2360,19 @@ export function createWorld(city, index, flight = false) {
   }
 
   const waterPos = [];
-  const appendPos = (extra) => {
-    for (let i = 0; i < extra.length; i++) waterPos.push(extra[i]);
+  const dniproPos = [];
+  const appendPos = (extra, into) => {
+    for (let i = 0; i < extra.length; i++) into.push(extra[i]);
   };
-  for (const river of stitchRivers(city.rivers)) appendPos(riverSurface(river));
+  for (const river of stitchRivers(city.rivers)) {
+    const sheet = riverSurface(river);
+    const wide = (river.w || 0) >= 400 || /дніпро/i.test(river.n || "");
+    appendPos(sheet, wide ? dniproPos : waterPos);
+  }
   for (const lake of city.lakes || []) {
     let bed = Infinity;
     for (let i = 0; i < lake.length; i += 2) bed = Math.min(bed, heightAt(lake[i], lake[i + 1]));
-    appendPos(fan(lake, (bed === Infinity ? 0 : bed) + 0.4));
+    appendPos(fan(lake, (bed === Infinity ? 0 : bed) + 0.4), waterPos);
   }
   const water = meshFrom(waterPos, 0x1d5f92, 1);
   if (water) {
@@ -1862,6 +2383,18 @@ export function createWorld(city, index, flight = false) {
     water.material.polygonOffsetUnits = -3;
     scene.add(water);
   }
+  const dnipro = meshFrom(dniproPos, 0x1a78c4, 1);
+  if (dnipro) {
+    dnipro.frustumCulled = false;
+    dnipro.renderOrder = 2;
+    dnipro.material.polygonOffset = true;
+    dnipro.material.polygonOffsetFactor = -3;
+    dnipro.material.polygonOffsetUnits = -3;
+    dnipro.material.emissive = new THREE.Color(0x0c4a78);
+    dnipro.material.emissiveIntensity = 0.28;
+    scene.add(dnipro);
+  }
+  if (flight) dressKyiv(scene);
 
   const parkPos = [];
   for (const park of city.parks || []) parkPos.push(...fan(park, (x, z) => heightAt(x, z) + 0.12));
@@ -1877,7 +2410,10 @@ export function createWorld(city, index, flight = false) {
   const sights = [];
   for (const s of city.sights) {
     const mark = landmark(s);
-    mark.position.set(s.x, heightAt(s.x, s.z), s.z);
+    const spot = mark.userData.foot
+      ? clearOfRunway(s.x, s.z, mark.userData.foot[0], mark.userData.foot[1], city.fields)
+      : { x: s.x, z: s.z };
+    mark.position.set(spot.x, heightAt(spot.x, spot.z), spot.z);
     scene.add(mark);
     sights.push({ data: s, mark, beam: null });
   }
@@ -1906,6 +2442,8 @@ export function createWorld(city, index, flight = false) {
     sunDir.set(Math.cos(rad) * Math.sin(az), Math.sin(rad), Math.cos(rad) * Math.cos(az)).normalize();
     sky.material.uniforms.top.value.setHex(t.bg);
     sky.material.uniforms.horizon.value.setHex(t.fog);
+    sky.material.uniforms.sunColor.value.setHex(t.sun);
+    sky.material.uniforms.sunDir.value.copy(sunDir);
     const walls = buildings?.userData.walls;
     if (walls) {
       walls.material.emissive = walls.material.emissive || new THREE.Color(0xffd7a0);
@@ -1955,9 +2493,9 @@ export function createWorld(city, index, flight = false) {
     car: null,
     sights,
     craft: combat?.craft || [],
-    stepCombat(player, input, dt) {
+    stepCombat(player, input, dt, plan) {
       if (!combat) return { shot: false, missile: false, boom: false, kills: 0, broke: false, hit: false, tags: [] };
-      return combat.update(player, input, dt);
+      return combat.update(player, input, dt, plan);
     },
     get time() { return time; },
     get quality() { return quality; },
@@ -2054,11 +2592,20 @@ export function createWorld(city, index, flight = false) {
       const agl = Math.max(0, player.y - heightAt(player.x, player.z));
       const span = Math.min(120000, Math.max(7200, 6800 + agl * 16));
       const moved = Math.hypot(player.x - (ground.userData.cx || 0), player.z - (ground.userData.cz || 0));
-      if (moved > span * 0.12 || Math.abs(span - (ground.userData.span || 0)) > span * 0.08) reshapeGround(player.x, player.z, span);
+      if (moved > span * 0.12 || Math.abs(span - (ground.userData.span || 0)) > span * 0.08) scheduleGround(player.x, player.z, span);
+      pumpGround(36);
       sky.position.set(player.x, 0, player.z);
+      sky.material.uniforms.sunDir.value.copy(sunDir);
+      sunGlow.position.set(player.x, player.y + 30, player.z).addScaledVector(sunDir, 3400);
       const air = player.flying || agl > 45;
-      scene.fog.near = air ? 8000 : fogNear;
-      scene.fog.far = air ? 46000 : fogFar;
+      if (air) {
+        const lift = Math.min(1, agl / 2800);
+        scene.fog.near = 1600 + lift * 2800;
+        scene.fog.far = 7000 + lift * 16000;
+      } else {
+        scene.fog.near = fogNear;
+        scene.fog.far = fogFar;
+      }
       sun.position.set(player.x, 0, player.z).addScaledVector(sunDir, 90);
       sun.target.position.set(player.x, 0, player.z);
       if (plane && player.flight) {
@@ -2122,7 +2669,10 @@ export function createWorld(city, index, flight = false) {
       }
       for (const s of sights) {
         const seen = sim.visited.has(s.data.id);
-        if (s.mark.userData.plate) s.mark.userData.plate.material.color.setHex(seen ? 0xb7e7c4 : 0xffffff);
+        if (s.mark.userData.plate) {
+          s.mark.userData.plate.visible = agl < 280;
+          s.mark.userData.plate.material.color.setHex(seen ? 0xb7e7c4 : 0xffffff);
+        }
       }
     },
   };

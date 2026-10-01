@@ -18,7 +18,7 @@ export function createPlayer(spawn) {
     vy: 0,
     flying: false,
     jets: false,
-    weapon: 0,
+    weapon: 1,
     lock: false,
     wings: 0,
     gear: 1,
@@ -192,6 +192,7 @@ function stepFlight(player, input, dt, world) {
     player.spin = 0;
     player.stallAge = 0;
     player.gearDown = true;
+    if (player.jets) player.flaps = 0;
     if (player.parked && input.accel) player.parked = false;
     if (player.parked) {
       player.throttle = 0;
@@ -272,8 +273,8 @@ function stepFlight(player, input, dt, world) {
     const stalling = slow || !!player.spin;
     const nose = (input.noseUp ? 1 : 0) - (input.noseDown ? 1 : 0);
     const rollInput = steer;
-    const noseK = 1 - Math.exp(-dt * 8);
-    const rollK = 1 - Math.exp(-dt * 6);
+    const noseK = 1 - Math.exp(-dt * 3.4);
+    const rollK = 1 - Math.exp(-dt * 2.8);
     player.noseSm = (player.noseSm || 0) + (nose - (player.noseSm || 0)) * noseK;
     player.rollSm = (player.rollSm || 0) + (rollInput - (player.rollSm || 0)) * rollK;
     const noseCmd = player.noseSm;
@@ -291,13 +292,13 @@ function stepFlight(player, input, dt, world) {
       dropNose(player, dt, player.spin ? 2.1 : 1.55);
     } else {
       player.spin = 0;
-      oriRotateLocal(player, 1, 0, 0, -(noseCmd * 1.35 * auth) * dt);
-      oriRotateLocal(player, 0, 0, 1, -(rollCmd * 3.05 * auth) * dt);
+      oriRotateLocal(player, 1, 0, 0, -(noseCmd * 0.85 * auth) * dt);
+      oriRotateLocal(player, 0, 0, 1, -(rollCmd * 1.9 * auth) * dt);
       const right = oriAxis(player, 1, 0, 0);
       const up = oriAxis(player, 0, 1, 0);
       const aimed = oriAxis(player, 0, 0, 1);
       const bank = Math.atan2(-right.y, up.y);
-      oriRotateWorld(player, 0, 1, 0, Math.sin(bank) * 1.25 * dt * Math.max(0.3, Math.hypot(aimed.x, aimed.z)));
+      oriRotateWorld(player, 0, 1, 0, Math.sin(bank) * 0.82 * dt * Math.max(0.3, Math.hypot(aimed.x, aimed.z)));
     }
     const aimed = oriAxis(player, 0, 0, 1);
     const lifted = oriAxis(player, 0, 1, 0);
@@ -317,6 +318,10 @@ function stepFlight(player, input, dt, world) {
     const deck = ground();
     const agl = player.y - deck;
     player.agl = agl;
+    if (agl >= 180) {
+      player.gearDown = false;
+      player.flaps = 0;
+    }
     player.airTime = (player.airTime || 0) + dt;
     if (!stalling && player.gearDown !== false && agl < 20 && agl > 0 && climb < -2.2) {
       const pad = world.runway?.(player.x, player.z);
@@ -340,6 +345,7 @@ function stepFlight(player, input, dt, world) {
     const pad = world.runway?.(player.x, player.z);
     player.landStress = landingStress(player, agl, !!pad);
     if (player.airTime > 0.45 && player.y <= deck + 0.55) {
+      player.lastTouch = player.landStress;
       const fatal = !pad || player.landStress >= 0.82 || player.gearDown === false || player.spin;
       if (fatal) return wreckPlayer(player, world);
       player.y = deck + 0.45;

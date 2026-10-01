@@ -260,32 +260,66 @@ export function createCombat(scene, fields, elevation, wet = null) {
     };
   }
 
-  function droneRoute(slot) {
+  function unit(n) {
+    const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+    return x - Math.floor(x);
+  }
+
+  function droneRoute(slot, trip) {
+    const spot = eastOfKyiv(slot, 8);
     const south = slot % 2 === 0;
     const lap = slot % 4 < 2 ? 1 : -1;
-    const spot = eastOfKyiv(slot, 8);
-    const around = [
-      { x: -CITY_RING, z: lap * 4000 },
-      { x: -CITY_RING * 0.45, z: lap * CITY_RING },
-      { x: CITY_RING * 0.2, z: lap * CITY_RING },
-      { x: CITY_RING * 0.9, z: lap * CITY_RING * 0.45 },
-    ];
-    const tail = south
-      ? [
-          { x: lap * 5000, z: -CITY_RING },
-          { x: -18000 + (slot % 4) * 14000, z: -108000 },
-        ]
-      : [
-          { x: CITY_RING, z: lap * 2000 },
-          { x: 90000, z: -25000 + (slot % 4) * 16000 },
-        ];
-    return { x: spot.x, z: spot.z, points: around.concat(tail) };
+    if (slot % 3 === 0 && trip % 2 === 0) {
+      const around = [
+        { x: -CITY_RING, z: lap * 4000 },
+        { x: -CITY_RING * 0.45, z: lap * CITY_RING },
+        { x: CITY_RING * 0.2, z: lap * CITY_RING },
+        { x: CITY_RING * 0.9, z: lap * CITY_RING * 0.45 },
+      ];
+      const tail = south
+        ? [
+            { x: lap * 5000, z: -CITY_RING },
+            { x: -18000 + (slot % 4) * 14000, z: -108000 },
+          ]
+        : [
+            { x: CITY_RING, z: lap * 2000 },
+            { x: 90000, z: -25000 + (slot % 4) * 16000 },
+          ];
+      return { x: spot.x, z: spot.z, points: around.concat(tail) };
+    }
+    const seed = slot * 19.7 + trip * 53.1;
+    const points = [];
+    const hops = 6 + Math.floor(unit(seed) * 4);
+    for (let i = 0; i < hops; i++) {
+      const u = unit(seed + i * 2.17);
+      const v = unit(seed + i * 5.91);
+      const city = unit(seed + i * 1.31) < 0.55;
+      let x;
+      let z;
+      if (city) {
+        const ang = u * Math.PI * 2;
+        const rad = 1800 + v * 16000;
+        x = Math.sin(ang) * rad;
+        z = Math.cos(ang) * rad;
+      } else {
+        x = -108000 + u * 194000;
+        z = -105000 + v * 163000;
+      }
+      points.push({
+        x: Math.max(-108000, Math.min(86000, x)),
+        z: Math.max(-105000, Math.min(58000, z)),
+      });
+    }
+    if (unit(seed + 40) < 0.5) points.push({ x: -30000 + unit(seed + 41) * 70000, z: -108000 });
+    else points.push({ x: 90000, z: -50000 + unit(seed + 42) * 90000 });
+    return { x: spot.x, z: spot.z, points };
   }
 
   function spawnDrone(a) {
     const slot = a.id % 8;
     const fast = slot % 2 === 1;
-    const route = droneRoute(slot);
+    a.trip = (a.trip || 0) + 1;
+    const route = droneRoute(slot, a.trip);
     const first = route.points[0];
     a.fast = fast;
     a.pace = fast ? DRONE_FAST : DRONE_SLOW;
@@ -370,17 +404,15 @@ export function createCombat(scene, fields, elevation, wet = null) {
 
   for (let i = 0; i < 8; i++) {
     const mesh = droneGroup();
+    mesh.visible = false;
     scene.add(mesh);
-    const a = { id: i, mesh, role: "drone", kind: "air", vx: 0, vz: 0, vy: 0 };
-    spawnDrone(a);
-    craft.push(a);
+    craft.push({ id: i, mesh, role: "drone", kind: "air", vx: 0, vz: 0, vy: 0, alive: false, hp: 0, wait: 1e9, x: 0, y: 200, z: 0, h: 0 });
   }
   for (let i = 0; i < 5; i++) {
     const mesh = airlinerGroup();
+    mesh.visible = false;
     scene.add(mesh);
-    const a = { id: 100 + i, mesh, role: "civil", kind: "air", vx: 0, vz: 0, vy: 0 };
-    spawnCivil(a);
-    craft.push(a);
+    craft.push({ id: 100 + i, mesh, role: "civil", kind: "air", vx: 0, vz: 0, vy: 0, alive: false, hp: 0, wait: 1e9, x: 0, y: 200, z: 0, h: 0 });
   }
   for (let i = 0; i < 2; i++) {
     const mesh = fighterGroup();
@@ -522,7 +554,85 @@ export function createCombat(scene, fields, elevation, wet = null) {
   let gunT = 0;
   let missileT = 0;
   let flareT = 0;
-  let banditT = 240;
+  let planToken = -1;
+
+  function hideAir(a) {
+    a.alive = false;
+    a.hp = 0;
+    a.wait = 1e9;
+    a.points = null;
+    a.leave = false;
+    a.hunt = false;
+    a.holdAgl = null;
+    a.pace = 0;
+    if (a.mesh) a.mesh.visible = false;
+  }
+
+  function postDrone(a, spec) {
+    a.fast = !!spec.fast;
+    a.pace = spec.pace;
+    a.points = spec.points;
+    a.leg = 0;
+    a.x = spec.x;
+    a.z = spec.z;
+    a.h = spec.h || 0;
+    a.holdAgl = spec.agl;
+    a.agl = spec.agl;
+    a.y = elevation(a.x, a.z) + a.agl;
+    a.speed = a.pace;
+    a.alive = true;
+    a.hp = spec.hp || 40;
+    a.wait = 0;
+    a.roll = 0;
+    a.gunT = 2;
+    a.leave = !!spec.leave;
+    a.hunt = !!spec.hunt;
+    a.mesh.visible = true;
+    a.mesh.scale.setScalar(a.fast ? 2.05 : 2.45);
+  }
+
+  function postCivil(a, spec) {
+    a.points = spec.points;
+    a.leg = 0;
+    a.x = spec.x;
+    a.z = spec.z;
+    a.h = spec.h || 0;
+    a.holdAgl = spec.agl;
+    a.agl = spec.agl;
+    a.y = elevation(a.x, a.z) + a.agl;
+    a.pace = spec.speed || 70;
+    a.speed = a.pace;
+    a.alive = true;
+    a.hp = 80;
+    a.wait = 0;
+    a.roll = 0;
+    a.hunt = false;
+    a.leave = false;
+    a.mesh.visible = true;
+  }
+
+  function applyPlan(plan, player, fx) {
+    if (!plan || plan.token === planToken) return;
+    planToken = plan.token;
+    const drones = craft.filter((a) => a.role === "drone");
+    const civils = craft.filter((a) => a.role === "civil");
+    const bandits = craft.filter((a) => a.role === "bandit");
+    for (const a of drones) hideAir(a);
+    for (const a of civils) hideAir(a);
+    for (const a of bandits) hideAir(a);
+    (plan.drones || []).forEach((spec, i) => {
+      if (drones[i]) postDrone(drones[i], spec);
+    });
+    (plan.civils || []).forEach((spec, i) => {
+      if (civils[i]) postCivil(civils[i], spec);
+    });
+    const nBandit = plan.bandits || 0;
+    for (let i = 0; i < nBandit && i < bandits.length; i++) spawnBandit(bandits[i], player, i);
+    if (nBandit && bandits[0]) {
+      fx.raid = nBandit;
+      fx.raidRange = Math.hypot(bandits[0].x - player.x, bandits[0].z - player.z);
+    }
+  }
   let clock = 0;
   let lastH = 0;
   let lastRoll = 0;
@@ -783,8 +893,9 @@ export function createCombat(scene, fields, elevation, wet = null) {
     return best;
   }
 
-  function update(player, input, dt) {
+  function update(player, input, dt, plan) {
     const fx = { shot: false, missile: false, boom: false, kills: 0, broke: false, hit: false, tags: [] };
+    applyPlan(plan, player, fx);
     clock += dt;
     gunT = Math.max(0, gunT - dt);
     missileT = Math.max(0, missileT - dt);
@@ -863,6 +974,7 @@ export function createCombat(scene, fields, elevation, wet = null) {
       if (tr.life <= 0) tr.mesh.visible = false;
     }
 
+    let shotRange = null;
     for (const m of missiles) {
       if (m.life <= 0) continue;
       m.life -= dt;
@@ -872,6 +984,7 @@ export function createCombat(scene, fields, elevation, wet = null) {
         const ty = m.target.y + 1.2 - m.y;
         const tz = m.target.z - m.z;
         const len = Math.hypot(tx, ty, tz) || 1;
+        if (m.target === locked && (shotRange == null || len < shotRange)) shotRange = len;
         const k = Math.min(1, dt * 7);
         m.dx += (tx / len - m.dx) * k;
         m.dy += (ty / len - m.dy) * k;
@@ -918,6 +1031,7 @@ export function createCombat(scene, fields, elevation, wet = null) {
       }
       if (m.life <= 0) m.mesh.visible = false;
     }
+    player.shotRange = shotRange;
 
     for (const s of smokes) {
       if (s.life <= 0) continue;
@@ -972,39 +1086,24 @@ export function createCombat(scene, fields, elevation, wet = null) {
       if (ring.life <= 0) ring.mesh.visible = false;
     }
 
-    banditT -= dt;
-    if (banditT <= 0) {
-      banditT = 240;
-      let spawned = 0;
-      for (const a of craft) {
-        if (a.role !== "bandit" || a.alive) continue;
-        spawnBandit(a, player, spawned);
-        spawned++;
-      }
-      if (spawned) fx.raid = spawned;
-    }
     for (const a of craft) {
-      if (!a.alive) {
-        if (a.role === "bandit") continue;
-        a.wait -= dt;
-        if (a.wait <= 0) {
-          if (a.role === "drone") spawnDrone(a);
-          else if (a.role === "civil") spawnCivil(a);
-          else placeAround(a, player, (a.id % 8) + 3);
-        }
-        continue;
-      }
+      if (!a.alive) continue;
       const far = Math.hypot(a.x - player.x, a.z - player.z);
       const limit = a.role === "bandit" ? 12000 : 6200;
       if (far > limit && a.role !== "bandit" && a.role !== "drone" && a.role !== "civil") placeAround(a, player, a.id % 8);
       const prevY = a.y;
-      if (a.role === "bandit" && player.flying && far < 8000 && far > 70) {
+      if (a.role === "bandit") {
         const slot = a.id % 2;
         const high = slot === 1;
+        const engage = player.flying && far < 8000 && far > 70;
         const back = high ? 1600 : 900;
         const side = (slot === 0 ? -1 : 1) * (high ? 140 : 220);
-        const bx = player.x - Math.sin(player.heading) * back + Math.cos(player.heading) * side;
-        const bz = player.z - Math.cos(player.heading) * back - Math.sin(player.heading) * side;
+        const bx = engage
+          ? player.x - Math.sin(player.heading) * back + Math.cos(player.heading) * side
+          : player.x;
+        const bz = engage
+          ? player.z - Math.cos(player.heading) * back - Math.sin(player.heading) * side
+          : player.z;
         const aim = Math.atan2(bx - a.x, bz - a.z);
         let diff = wrap(aim - a.h);
         const maxTurn = 1.15 * dt;
@@ -1013,23 +1112,41 @@ export function createCombat(scene, fields, elevation, wet = null) {
         a.h = wrap(a.h + diff);
         a.roll = Math.max(-0.7, Math.min(0.7, diff / Math.max(dt, 0.001) * 0.12));
         const groundY = elevation(a.x, a.z);
-        a.agl = Math.max(180, player.y - groundY + (high ? 260 : 40));
+        a.agl = engage ? Math.max(180, player.y - groundY + (high ? 260 : 40)) : Math.max(220, a.agl || 420);
         a.speed = BANDIT_SPEED;
         a.gunT = (a.gunT || 0) - dt;
         const rear = -((a.x - player.x) * Math.sin(player.heading) + (a.z - player.z) * Math.cos(player.heading));
         const flyingHostile = hostile.filter((m) => m.life > 0).length;
-        if (rear > 180 && far < 1700 && far > 320 && a.gunT <= 0 && flyingHostile < 2) {
+        if (engage && rear > 180 && far < 1700 && far > 320 && a.gunT <= 0 && flyingHostile < 2) {
           if (launchHostile(a)) {
             a.gunT = 9;
             fx.launch = true;
           }
         }
+      } else if (a.role === "drone" && a.hunt) {
+        const civil = craft.find((c) => c.alive && c.role === "civil");
+        if (!civil) {
+          a.alive = false;
+          a.mesh.visible = false;
+        } else {
+          const aim = Math.atan2(civil.x - a.x, civil.z - a.z);
+          let diff = wrap(aim - a.h);
+          const maxTurn = 0.7 * dt;
+          if (diff > maxTurn) diff = maxTurn;
+          if (diff < -maxTurn) diff = -maxTurn;
+          a.h = wrap(a.h + diff);
+          a.roll = Math.max(-0.45, Math.min(0.45, diff / Math.max(dt, 0.001) * 0.08));
+          a.agl = a.holdAgl != null ? a.holdAgl : 700;
+          a.speed = a.pace || 90;
+          if (Math.hypot(civil.x - a.x, civil.y - a.y, civil.z - a.z) < 380) fx.escortHit = true;
+        }
       } else if (a.role === "drone") {
         const wp = a.points && a.points[a.leg];
         if (!wp) {
           a.alive = false;
-          a.wait = 8 + (a.id % 4) * 3;
+          a.wait = 1e9;
           a.mesh.visible = false;
+          if (a.leave) fx.escaped = true;
         } else {
           const aim = Math.atan2(wp.x - a.x, wp.z - a.z);
           let diff = wrap(aim - a.h);
@@ -1038,15 +1155,16 @@ export function createCombat(scene, fields, elevation, wet = null) {
           if (diff < -maxTurn) diff = -maxTurn;
           a.h = wrap(a.h + diff);
           a.roll = Math.max(-0.45, Math.min(0.45, diff / Math.max(dt, 0.001) * 0.08));
-          a.agl = a.fast ? 540 + (a.id % 3) * 80 : 230 + (a.id % 3) * 55;
+          a.agl = a.holdAgl != null ? a.holdAgl : (a.fast ? 540 : 230);
           a.speed = a.pace;
-          if (Math.hypot(wp.x - a.x, wp.z - a.z) < 1700) a.leg += 1;
+          const gate = a.leave ? 700 : 320;
+          if (Math.hypot(wp.x - a.x, wp.z - a.z) < gate) a.leg += 1;
         }
       } else {
         const wp = a.points && a.points[a.leg];
         if (!wp) {
           a.alive = false;
-          a.wait = 14;
+          a.wait = 1e9;
           a.mesh.visible = false;
         } else {
           const aim = Math.atan2(wp.x - a.x, wp.z - a.z);
@@ -1056,9 +1174,9 @@ export function createCombat(scene, fields, elevation, wet = null) {
           if (diff < -maxTurn) diff = -maxTurn;
           a.h = wrap(a.h + diff);
           a.roll = Math.max(-0.25, Math.min(0.25, diff / Math.max(dt, 0.001) * 0.05));
-          a.agl = 980 + (a.id % 3) * 140;
-          a.speed = 125;
-          if (Math.hypot(wp.x - a.x, wp.z - a.z) < 2200) a.leg += 1;
+          a.agl = a.holdAgl != null ? a.holdAgl : 900;
+          a.speed = a.pace || 70;
+          if (Math.hypot(wp.x - a.x, wp.z - a.z) < 1600) a.leg += 1;
         }
       }
       a.x += Math.sin(a.h) * a.speed * dt;
