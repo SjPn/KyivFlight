@@ -6,7 +6,8 @@ import { decodeCity } from "./mapio.js?v=1";
 import { FIELDS, fieldAt, nearestField, runwayStart } from "./airfields.js?v=2";
 import { createPlayer, resetPlayer, updatePlayer } from "./player.js?v=88";
 import { armSortie, clearRetry, createSim, nearestSight, pickSortie, restartSortie, retryHint, updateSim } from "./sim.js?v=65";
-import { createUI } from "./ui.js?v=91";
+import { isPhone, mountTouch } from "./touch.js?v=2";
+import { createUI } from "./ui.js?v=92";
 import { createWorld } from "./world.js?v=116";
 
 const app = document.querySelector("#app");
@@ -428,6 +429,7 @@ async function boot() {
   });
   renderer.domElement.addEventListener("click", () => {
     audio.unlock();
+    if (isPhone()) return;
     if (!ui.mapOpen) holdFlightKeys();
   });
   window.addEventListener("mousemove", (e) => {
@@ -521,6 +523,15 @@ async function boot() {
       if (e.code === "Space") ui.recenter(player);
     }
   });
+
+  if (isPhone()) {
+    takeoff?.addEventListener("click", () => audio.unlock());
+    window.addEventListener("touchlook", (e) => {
+      lookX -= e.detail.dx * 0.0045;
+      lookY = Math.max(-0.6, Math.min(1.1, lookY - e.detail.dy * 0.0036));
+    });
+    mountTouch({ keys, unlock: () => audio.unlock() });
+  }
 
   let last = performance.now();
   let hadLock = false;

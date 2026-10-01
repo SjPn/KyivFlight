@@ -2,12 +2,20 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Kyiv Flight</title>
+  <script>
+    (function () {
+      var ua = navigator.userAgent || "";
+      var ipad = (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1) || /iPad/.test(ua);
+      var coarse = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+      if (ipad || /Android|iPhone|iPod/.test(ua) || coarse) document.documentElement.classList.add("mobile");
+    })();
+  </script>
   <meta name="description" content="Fly around Kyiv and Kyiv Oblast. Airfields, traffic in the sky, and a jet that fights.">
   <meta name="theme-color" content="#0d1117">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/src/style.css?v=57">
+  <link rel="stylesheet" href="/src/style.css?v=59">
   <script type="importmap">
   {
     "imports": { "three": "/vendor/three.module.js" }
@@ -15,6 +23,7 @@
   </script>
 </head>
 <body>
+  <div class="turn">Turn the phone sideways</div>
   <div id="app"></div>
   <div id="loading">
     <div class="sky" aria-hidden="true">
@@ -110,7 +119,7 @@
           <ul>
             <li class="act"><b>Fly</b><span>Take off, loop, roll, and light the afterburner to 2400 km/h. Land on real runways across the oblast.</span></li>
             <li class="act"><b>Fight</b><span>Gun and missiles, flares, and a radar. Green is civil, red is a drone, orange is an enemy jet.</span></li>
-            <li class="act"><b>See the city</b><span>Maidan, the Lavra, the Dnipro. After the lessons, pick the next sortie on the chart with M.</span></li>
+            <li class="act"><b>See the city</b><span class="for-desk">Maidan, the Lavra, the Dnipro. After the lessons, pick the next sortie on the chart with M.</span><span class="for-phone">Maidan, the Lavra, the Dnipro. After the lessons, pick the next sortie on the chart.</span></li>
           </ul>
         </section>
       </div>
@@ -130,6 +139,6 @@
       </div>
     </div>
   </div>
-  <script type="module" src="/src/main.js?v=150"></script>
+  <script type="module" src="/src/main.js?v=152"></script>
 </body>
 </html>

@@ -106,6 +106,28 @@ function englishLine(text) {
   return String(text).replace(/[А-Яа-яІіЇїЄєҐґ][^·,]*/gu, (chunk) => shortStreet(chunk.trim()));
 }
 
+const PHONE_CUE = {
+  "S · rotate": "Pull up",
+  "Flaps · + · takeoff": "Flaps, then thrust",
+  "+ · takeoff": "Hold thrust",
+  "B · retry": "Tap Base",
+  "M · chart": "Open the chart",
+  "C · flares": "Flares",
+  "Hold plus": "Hold thrust",
+  "Pull up": "Pull up",
+  "Alt · gun": "Switch to gun",
+  "Guns · Space": "Fire",
+  "Lock · Space": "Fire",
+  "Stay close": "Stay close",
+  "G · gear": "Gear down",
+  "F · flaps": "Flaps",
+};
+
+function phoneCue(text) {
+  if (!text) return "";
+  return PHONE_CUE[text] || text;
+}
+
 export function createUI(city, index) {
   const root = document.createElement("div");
   root.className = "hud";
@@ -907,11 +929,12 @@ export function createUI(city, index) {
       const cue = $(".cue");
       if (cue) {
         const vr = player.flaps > 0.5 ? 70 : 140;
-        const cueText = player.wrecked
+        let cueText = player.wrecked
           ? ""
           : (sim.cue || (!player.flying
             ? (kmh > vr ? "S · rotate" : player.flaps > 0.5 ? "Flaps · + · takeoff" : "+ · takeoff")
             : ""));
+        if (document.documentElement.classList.contains("mobile")) cueText = phoneCue(cueText);
         setText(cue, cueText);
         cue.classList.toggle("on", !!cueText);
       }
