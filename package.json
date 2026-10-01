@@ -1,0 +1,19 @@
+{
+  "name": "kiev-ride",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "map": "node tools/build-map.mjs",
+    "dev": "node tools/serve.mjs",
+    "start": "node tools/serve.mjs",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "vite": "^6.0.3"
+  }
+}
