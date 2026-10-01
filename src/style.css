@@ -38,7 +38,7 @@ html, body {
 
 .hud { position: fixed; inset: 0; z-index: 12; pointer-events: none; font-family: "Segoe UI", system-ui, sans-serif; }
 .hud.hidden .topbar, .hud.hidden .money, .hud.hidden .explore, .hud.hidden .panel,
-.hud.hidden .speed, .hud.hidden .nav, .hud.hidden .fly, .hud.hidden .hint, .hud.hidden .place, .hud.hidden .weapon, .hud.hidden .crosshair, .hud.hidden .lockbox, .hud.hidden .radar, .hud.hidden .lead, .hud.hidden .tags, .hud.hidden .atc, .hud.hidden .meters { visibility: hidden; }
+.hud.hidden .speed, .hud.hidden .nav, .hud.hidden .fly, .hud.hidden .hint, .hud.hidden .place, .hud.hidden .weapon, .hud.hidden .crosshair, .hud.hidden .lockbox, .hud.hidden .radar, .hud.hidden .lead, .hud.hidden .tags, .hud.hidden .meters { visibility: hidden; }
 .topbar { position: absolute; top: 2.2vh; left: 2vw; display: flex; gap: 8px; pointer-events: auto; flex-wrap: wrap; max-width: 70vw; }
 .key, .mapkey, .legend button, .sheet button, .explore {
   pointer-events: auto;
@@ -202,19 +202,6 @@ html, body {
   box-shadow: 0 0 8px #f2c14eaa;
   pointer-events: none;
 }
-.atc {
-  position: absolute;
-  top: calc(2.2vh + 82px);
-  left: 50%;
-  transform: translateX(-50%);
-  color: #e7eef8;
-  font-weight: 800;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-  font-size: 13px;
-  text-shadow: 0 2px 8px #000;
-}
-.atc:empty { display: none; }
 .tags { position: absolute; inset: 0; pointer-events: none; }
 .tags b {
   position: absolute;

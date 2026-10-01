@@ -127,7 +127,6 @@ export function createUI(city, index) {
       <canvas class="scope" width="180" height="180"></canvas>
       <div class="keyline"><i class="g"></i>Civil<i class="r"></i>Drones<b class="score">0 down</b></div>
     </div>
-    <div class="atc"></div>
     <div class="crosshair"></div>
     <div class="lead off"></div>
     <div class="lockbox off"></div>
@@ -159,14 +158,17 @@ export function createUI(city, index) {
           ${row("", "a climb bleeds speed, a dive builds it")}
           ${row("", "the landing bar must stay left of the white mark")}
           ${row("", "flare with S, gear down, then touch the runway")}
-          ${row("", "landing reloads missiles. Four drones finish a sortie")}
+          ${row("", "landing reloads missiles, the gun, and flares")}
         </section>
         <section><h5>Weapons</h5>
           ${row(kbd("Space"), "fire")}
           ${row(kbd("Alt"), "gun / missiles")}
+          ${row(kbd("C"), "flares — drop a pair to decoy a missile")}
+          ${row("", "8 missiles, 300 gun rounds, 24 flares")}
           ${row("", "the gold diamond is where the gun rounds will meet")}
           ${row("", "missiles lock the nearest drone within 15 km")}
-          ${row("", "a hard turn breaks a missile on your tail")}
+          ${row("", "the beep speeds up, then holds when a missile is close")}
+          ${row("", "a hard turn breaks a missile; flares pull it off")}
           ${row("", "green radar blips are civil, red are drones")}
           ${row("", "shoot the drones — they break apart and fall")}
         </section>
@@ -735,7 +737,8 @@ export function createUI(city, index) {
               : "Shift · takeoff";
       const weapon = $(".weapon");
       if (weapon) {
-        weapon.textContent = player.weapon ? "MSL " + (player.missiles ?? 0) : "GUN";
+        const flr = "FLR " + (player.flares ?? 0);
+        weapon.textContent = (player.weapon ? "MSL " + (player.missiles ?? 0) : "GUN " + (player.rounds ?? 0)) + " · " + flr;
         weapon.classList.toggle("lock", !!player.lock);
       }
       const cross = $(".crosshair");
@@ -756,8 +759,6 @@ export function createUI(city, index) {
           lead.style.top = frame.leadScreen.y + "px";
         } else lead.classList.add("off");
       }
-      const atc = $(".atc");
-      if (atc) atc.textContent = frame.atc || "";
       const tags = $(".tags");
       if (tags) {
         tags.innerHTML = (frame.tags || []).map((tag) => (

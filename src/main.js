@@ -1,12 +1,12 @@
 import * as THREE from "three";
-import { createAudio } from "./audio.js?v=28";
+import { createAudio } from "./audio.js?v=31";
 import { loadElev } from "./elev.js?v=49";
 import { clearPlazas, indexCity, nearestRoad, onRoad, openStreets, presentEast } from "./geo.js?v=67";
 import { FIELDS, fieldAt, nearestField, runwayStart } from "./airfields.js?v=1";
-import { createPlayer, resetPlayer, updatePlayer } from "./player.js?v=78";
-import { clearRetry, createSim, nearestSight, retryHint, updateSim } from "./sim.js?v=60";
-import { createUI } from "./ui.js?v=71";
-import { createWorld } from "./world.js?v=90";
+import { createPlayer, resetPlayer, updatePlayer } from "./player.js?v=81";
+import { clearRetry, createSim, nearestSight, retryHint, updateSim } from "./sim.js?v=61";
+import { createUI } from "./ui.js?v=75";
+import { createWorld } from "./world.js?v=92";
 
 const app = document.querySelector("#app");
 const loading = document.querySelector("#loading");
@@ -94,19 +94,20 @@ let cabin = false;
 const tmp = new THREE.Vector3();
 const camTarget = new THREE.Vector3();
 const lookAt = new THREE.Vector3();
-const bodyEuler = new THREE.Euler(0, 0, 0, "YXZ");
 const bodyQuat = new THREE.Quaternion();
+const lookYaw = new THREE.Quaternion();
 const camQuat = new THREE.Quaternion();
 const camNose = new THREE.Vector3();
 const camUpV = new THREE.Vector3();
 let chaseReady = false;
 let camBank = 0;
 let camFov = 68;
+let viewDist = 16;
 
 window.addEventListener("keydown", (e) => {
   if (e.repeat) return;
   keys.add(e.code);
-  if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyW", "KeyA", "KeyS", "KeyD", "KeyF", "KeyG", "AltLeft", "AltRight", "ControlLeft", "ControlRight", "CapsLock"].includes(e.code)) e.preventDefault();
+    if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyW", "KeyA", "KeyS", "KeyD", "KeyC", "KeyF", "KeyG", "AltLeft", "AltRight", "ControlLeft", "ControlRight", "CapsLock"].includes(e.code)) e.preventDefault();
 });
 window.addEventListener("keyup", (e) => keys.delete(e.code));
 window.addEventListener("blur", () => keys.clear());
@@ -139,6 +140,7 @@ function readInput(player) {
       noseUp: keys.has("KeyS") || !!gp?.buttons[3]?.pressed,
       noseDown: keys.has("KeyW") || !!gp?.buttons[0]?.pressed,
       fire: keys.has("Space") || !!gp?.buttons[1]?.pressed,
+      flare: keys.has("KeyC") || !!gp?.buttons[5]?.pressed,
       manual: true,
     };
   }
@@ -335,9 +337,6 @@ async function boot() {
   let wasSpin = false;
   let stallT = 0;
   let warnT = 0;
-  let atc = "";
-  let atcT = 0;
-  const tower = { cleared: 0, gear: 0, fast: 0 };
   sim.kills = sim.kills || 0;
   sim.tags = [];
 
@@ -357,6 +356,7 @@ async function boot() {
       updateSim(sim, player, dt, input);
       const fx = world.stepCombat(player, input, dt);
       if (fx.shot) audio.shot(fx.missile);
+      if (fx.flare) audio.flare();
       if (fx.boom) audio.boom();
       if (player.lock && !hadLock) audio.lock();
       hadLock = !!player.lock;
@@ -367,13 +367,27 @@ async function boot() {
           stallT = 0.42;
         }
       } else stallT = 0;
-      if (player.warning) {
-        warnT -= dt;
-        if (warnT <= 0) {
-          audio.warn();
-          warnT = 0.48;
-        }
-      } else warnT = 0;
+      const missileNear = player.missileDist;
+      const missileClose = missileNear != null && missileNear < 240 && player.flying && !player.wrecked;
+      if (missileClose) {
+        audio.threat(true, 1 - missileNear / 240);
+      } else {
+        audio.threat(false);
+        if (missileNear != null && player.flying && !player.wrecked) {
+          const near = Math.max(0, Math.min(1, missileNear / 1900));
+          warnT -= dt;
+          if (warnT <= 0) {
+            audio.warn(1 - near);
+            warnT = 0.08 + near * 0.64;
+          }
+        } else if (player.warning) {
+          warnT -= dt;
+          if (warnT <= 0) {
+            audio.warn(0);
+            warnT = 0.62;
+          }
+        } else warnT = 0;
+      }
       if (player.spin && !wasSpin) {
         sim.toast = "Stall · spin — add power";
         sim.toastT = 1.8;
@@ -387,6 +401,18 @@ async function boot() {
       }
       if (fx.empty) {
         sim.toast = "Missiles empty · land to rearm";
+        sim.toastT = 1.2;
+      }
+      if (fx.gunEmpty) {
+        sim.toast = "Gun empty · land to rearm";
+        sim.toastT = 1.2;
+      }
+      if (fx.flareEmpty) {
+        sim.toast = "Flares empty · land to rearm";
+        sim.toastT = 1.2;
+      }
+      if (fx.spoofed) {
+        sim.toast = "Missile decoyed";
         sim.toastT = 1.2;
       }
       if (fx.broke) {
@@ -405,31 +431,9 @@ async function boot() {
       for (const tag of fx.tags || []) sim.tags.push({ ...tag, life: 1.5 });
       for (const tag of sim.tags) tag.life -= dt;
       sim.tags = sim.tags.filter((tag) => tag.life > 0);
-      if (player.flying) {
-        const field = nearestField(city.fields, player.x, player.z);
-        const dist = Math.hypot(player.x - field.x, player.z - field.z);
-        const agl = player.y - world.elevation(player.x, player.z);
-        const kmh = Math.abs(player.speed) * 3.6;
-        const nowMs = now;
-        const call = (key, gap, line) => {
-          if (nowMs - tower[key] < gap) return;
-          tower[key] = nowMs;
-          audio.say(line);
-          atc = line;
-          atcT = 2.4;
-        };
-        const approach = player.vy < 6 && agl < 700;
-        if (dist < 5500 && dist > 350 && approach) call("cleared", 22000, "Cleared to land");
-        if (dist < 2600 && agl < 320 && player.vy < 4 && player.gearDown === false) call("gear", 9000, "Gear");
-        const fast = player.flaps > 0.5 ? 190 : 240;
-        if (dist < 2400 && agl < 280 && player.vy < 4 && kmh > fast) call("fast", 8000, "Too fast");
-      }
-      if (atcT > 0) atcT -= dt;
-      else atc = "";
       if (player.shake > 0) player.shake = Math.max(0, player.shake - dt);
       audio.setDrive(player.speed, player.jets, true);
-      audio.tick();
-    }
+    } else audio.threat(false);
     world.sync(player, sim, dt);
 
     const dist = cabin
@@ -446,25 +450,30 @@ async function boot() {
       camera.updateProjectionMatrix();
     }
 
-    const hy = player.heading + (cabin ? lookX : lookX * 0.35);
-    bodyEuler.set(-(player.pitch || 0), hy, -(player.roll || 0));
-    bodyQuat.setFromEuler(bodyEuler);
+    bodyQuat.set(player.qx || 0, player.qy || 0, player.qz || 0, player.qw == null ? 1 : player.qw);
+    if (lookX) {
+      const yaw = (cabin ? lookX : lookX * 0.35) * 0.5;
+      lookYaw.set(0, Math.sin(yaw), 0, Math.cos(yaw));
+      bodyQuat.multiply(lookYaw);
+    }
     const gap = Math.hypot(player.x - camera.position.x, player.y - camera.position.y, player.z - camera.position.z);
     if (cabin || !chaseReady || gap > 500) {
       camQuat.copy(bodyQuat);
       chaseReady = true;
+      viewDist = dist;
     } else {
       const align = Math.abs(camQuat.dot(bodyQuat));
-      const tau = align < 0.8 ? 0.04 : 0.14;
+      const tau = align < 0.8 ? 0.04 : 0.18;
       camQuat.slerp(bodyQuat, 1 - Math.exp(-dt / tau));
+      viewDist += (dist - viewDist) * (1 - Math.exp(-dt / 0.28));
     }
     camNose.set(0, 0, 1).applyQuaternion(camQuat);
     camUpV.set(0, 1, 0).applyQuaternion(camQuat);
     const above = cabin ? 1.15 : 7.4 + lookY * 2.2;
     camTarget.set(
-      player.x - camNose.x * dist + camUpV.x * above,
-      player.y - camNose.y * dist + camUpV.y * above,
-      player.z - camNose.z * dist + camUpV.z * above,
+      player.x - camNose.x * viewDist + camUpV.x * above,
+      player.y - camNose.y * viewDist + camUpV.y * above,
+      player.z - camNose.z * viewDist + camUpV.z * above,
     );
     camera.position.copy(camTarget);
     for (let n = 0; n < 6; n++) {
@@ -483,12 +492,14 @@ async function boot() {
       camera.updateProjectionMatrix();
     }
     if (cabin) {
-      const rolled = wrapRoll(player.roll || 0);
-      camBank += (-rolled * 0.85 - camBank) * Math.min(1, dt * 4);
-      camera.rotation.order = "YXZ";
-      camera.rotation.y = hy + Math.PI;
-      camera.rotation.x = -player.pitch + lookY;
-      camera.rotation.z = camBank;
+      camera.quaternion.copy(bodyQuat);
+      lookYaw.set(0, 1, 0, 0);
+      camera.quaternion.multiply(lookYaw);
+      if (lookY) {
+        const px = lookY * 0.5;
+        lookYaw.set(Math.sin(px), 0, 0, Math.cos(px));
+        camera.quaternion.multiply(lookYaw);
+      }
     } else {
       camera.up.copy(camUpV);
       if (camera.up.lengthSq() < 1e-6) camera.up.set(0, 1, 0);
@@ -521,7 +532,6 @@ async function boot() {
       lockScreen,
       leadScreen,
       tags,
-      atc: atcT > 0 ? atc : "",
     });
     try {
       renderer.render(world.scene, camera);

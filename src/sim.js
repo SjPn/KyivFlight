@@ -49,10 +49,14 @@ export function createSim(city, index, flight = false) {
 }
 
 const SORTIE_KILLS = 4;
-const MISSILE_LOAD = 6;
+const MISSILE_LOAD = 8;
+const GUN_LOAD = 300;
+const FLARE_LOAD = 24;
 
 function updateSortie(sim, player, dt) {
   if (player.missiles == null) player.missiles = MISSILE_LOAD;
+  if (player.rounds == null) player.rounds = GUN_LOAD;
+  if (player.flares == null) player.flares = FLARE_LOAD;
   if (sim.sortieNeed == null) sim.sortieNeed = SORTIE_KILLS;
   if (sim.sortieGot == null) sim.sortieGot = 0;
   if (player.crashed) sim.noReload = 1.8;
@@ -80,12 +84,14 @@ function updateSortie(sim, player, dt) {
   const pad = fieldAt(sim.fields, player.x, player.z);
   const down = !player.flying && !!pad && !(sim.noReload > 0);
   if (down && sim.wasAir) {
-    const short = player.missiles < MISSILE_LOAD;
+    const short = player.missiles < MISSILE_LOAD || player.rounds < GUN_LOAD || player.flares < FLARE_LOAD;
     player.missiles = MISSILE_LOAD;
+    player.rounds = GUN_LOAD;
+    player.flares = FLARE_LOAD;
     if (left <= 0) {
-      say(sim, "Sortie complete", "Missiles reloaded");
+      say(sim, "Sortie complete", "Rearmed");
       sim.sortieGot = 0;
-    } else if (short) say(sim, "Missiles reloaded", MISSILE_LOAD + " on the rails");
+    } else if (short) say(sim, "Rearmed", "8 missiles · 300 rounds · flares");
   }
   sim.wasAir = !!player.flying;
 }

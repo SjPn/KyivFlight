@@ -271,7 +271,7 @@ export function createCombat(scene, fields, elevation, wet = null) {
   const missileMat = new THREE.MeshLambertMaterial({ color: 0xf4f1ea });
   const bandMat = new THREE.MeshLambertMaterial({ color: 0xf2c14e });
   const flameMat = new THREE.MeshBasicMaterial({ color: 0xff6a1a, fog: false });
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 8; i++) {
     const mesh = new THREE.Group();
     const body = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.16, 2.15, 10), missileMat);
     body.rotation.x = Math.PI / 2;
@@ -367,11 +367,28 @@ export function createCombat(scene, fields, elevation, wet = null) {
     mesh.userData.flame = flame;
     mesh.visible = false;
     scene.add(mesh);
-    hostile.push({ mesh, life: 0, age: 0, x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1 });
+    hostile.push({ mesh, life: 0, age: 0, x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1, decoy: null });
+  }
+
+  const flares = [];
+  for (let i = 0; i < 16; i++) {
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xffe7a8,
+      transparent: true,
+      opacity: 0.95,
+      depthWrite: false,
+      fog: false,
+    });
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.85, 8, 6), mat);
+    mesh.visible = false;
+    mesh.frustumCulled = false;
+    scene.add(mesh);
+    flares.push({ mesh, life: 0, max: 1, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, puff: 0 });
   }
 
   let gunT = 0;
   let missileT = 0;
+  let flareT = 0;
   let hunters = [];
   let river = null;
   let riverT = 0;
@@ -588,6 +605,53 @@ export function createCombat(scene, fields, elevation, wet = null) {
     return true;
   }
 
+  function dropFlare(player, side) {
+    const slot = flares.find((f) => f.life <= 0);
+    if (!slot || (player.flares ?? 0) <= 0) return false;
+    player.flares -= 1;
+    const hx = Math.sin(player.heading);
+    const hz = Math.cos(player.heading);
+    const rx = Math.cos(player.heading);
+    const rz = -Math.sin(player.heading);
+    slot.life = 4.4;
+    slot.max = 4.4;
+    slot.x = player.x - hx * 9 + rx * side * 2.1;
+    slot.y = player.y + 0.6;
+    slot.z = player.z - hz * 9 + rz * side * 2.1;
+    slot.vx = -hx * 26 + rx * side * 8;
+    slot.vy = 3;
+    slot.vz = -hz * 26 + rz * side * 8;
+    slot.puff = 0;
+    slot.mesh.visible = true;
+    slot.mesh.scale.setScalar(1.2);
+    return true;
+  }
+
+  function seekFlare(m, player) {
+    if (m.age < 0.45) return null;
+    const px = player.x - m.x;
+    const py = player.y + 1.2 - m.y;
+    const pz = player.z - m.z;
+    const pd = Math.hypot(px, py, pz) || 1;
+    let best = null;
+    let bestD = 1e9;
+    for (const f of flares) {
+      if (f.life <= 0.2) continue;
+      const dx = f.x - m.x;
+      const dy = f.y - m.y;
+      const dz = f.z - m.z;
+      const dist = Math.hypot(dx, dy, dz);
+      if (dist > 540 || dist < 5 || dist > pd * 0.92) continue;
+      const align = (m.dx * dx + m.dy * dy + m.dz * dz) / dist;
+      if (align < 0.55) continue;
+      if (dist < bestD) {
+        bestD = dist;
+        best = f;
+      }
+    }
+    return best;
+  }
+
   function update(player, input, dt) {
     const fx = { shot: false, missile: false, boom: false, kills: 0, broke: false, hit: false, tags: [] };
     clock += dt;
@@ -599,6 +663,11 @@ export function createCombat(scene, fields, elevation, wet = null) {
     player.lockPos = locked ? { x: locked.x, y: locked.y + 2.2, z: locked.z } : null;
 
     if (input.fire && player.weapon !== 1 && gunT <= 0) {
+      if ((player.rounds ?? 0) <= 0) {
+        fx.gunEmpty = true;
+        gunT = 0.85;
+      } else {
+      player.rounds -= 1;
       gunT = GUN_GAP;
       fx.shot = true;
       const hit = rayHit(aim.x, aim.y, aim.z, aim.dx, aim.dy, aim.dz, GUN_RANGE, GUN_RADIUS);
@@ -622,6 +691,7 @@ export function createCombat(scene, fields, elevation, wet = null) {
         tr.mesh.visible = true;
         pointAlong(tr.mesh, tr.x, tr.y, tr.z, aim.dx, aim.dy, aim.dz);
         break;
+      }
       }
     }
 
@@ -893,26 +963,81 @@ export function createCombat(scene, fields, elevation, wet = null) {
     lastH = player.heading;
     lastRoll = player.roll || 0;
     const dodging = breakEnergy > 0.5;
+    flareT = Math.max(0, flareT - dt);
+    if (input.flare && player.flying && !player.wrecked && flareT <= 0) {
+      if ((player.flares ?? 0) <= 0) {
+        fx.flareEmpty = true;
+        flareT = 0.7;
+      } else {
+        const left = dropFlare(player, -1);
+        const right = (player.flares ?? 0) > 0 ? dropFlare(player, 1) : false;
+        if (left || right) {
+          fx.flare = true;
+          flareT = 0.28;
+        }
+      }
+    }
+    for (const f of flares) {
+      if (f.life <= 0) continue;
+      f.life -= dt;
+      f.vy -= 7 * dt;
+      f.vx *= Math.exp(-dt * 0.35);
+      f.vz *= Math.exp(-dt * 0.35);
+      f.x += f.vx * dt;
+      f.y += f.vy * dt;
+      f.z += f.vz * dt;
+      const deck = elevation(f.x, f.z) + 0.8;
+      if (f.y < deck) {
+        f.y = deck;
+        f.vy = 0;
+        f.vx *= 0.4;
+        f.vz *= 0.4;
+      }
+      const fade = Math.max(0, f.life / f.max);
+      f.mesh.position.set(f.x, f.y, f.z);
+      f.mesh.scale.setScalar(1.1 + (1 - fade) * 2.4);
+      f.mesh.material.opacity = 0.35 + fade * 0.65;
+      f.puff -= dt;
+      if (f.puff <= 0) {
+        f.puff = 0.06;
+        trailPuff(f.x, f.y, f.z, 0, 1, 0);
+      }
+      if (f.life <= 0) f.mesh.visible = false;
+    }
     const HOSTILE_SPEED = 250;
     let threat = false;
+    let nearestMissile = null;
     for (const m of hostile) {
       if (m.life <= 0) continue;
       threat = true;
       m.life -= dt;
       m.age += dt;
-      const tx = player.x - m.x;
-      const ty = player.y + 1.2 - m.y;
-      const tz = player.z - m.z;
+      if (!(m.decoy && m.decoy.life > 0)) m.decoy = seekFlare(m, player);
+      const decoy = m.decoy && m.decoy.life > 0 ? m.decoy : null;
+      const tx = (decoy ? decoy.x : player.x) - m.x;
+      const ty = (decoy ? decoy.y : player.y + 1.2) - m.y;
+      const tz = (decoy ? decoy.z : player.z) - m.z;
       const len = Math.hypot(tx, ty, tz) || 1;
-      const align = (m.dx * tx + m.dy * ty + m.dz * tz) / len;
-      if (m.age > 0.35 && (align < 0.78 || (dodging && align < 0.93))) {
-        fx.broke = true;
+      if (!decoy) {
+        const align = (m.dx * tx + m.dy * ty + m.dz * tz) / len;
+        if (m.age > 0.35 && (align < 0.78 || (dodging && align < 0.93))) {
+          fx.broke = true;
+          puff(m.x, m.y, m.z, false);
+          m.life = 0;
+          m.mesh.visible = false;
+          m.decoy = null;
+          continue;
+        }
+        if (nearestMissile == null || len < nearestMissile) nearestMissile = len;
+      } else if (len < 16) {
         puff(m.x, m.y, m.z, false);
         m.life = 0;
         m.mesh.visible = false;
+        m.decoy = null;
+        fx.spoofed = true;
         continue;
       }
-      const turn = Math.min(1, dt * 1.7);
+      const turn = Math.min(1, dt * (decoy ? 3.4 : 1.7));
       m.dx += (tx / len - m.dx) * turn;
       m.dy += (ty / len - m.dy) * turn;
       m.dz += (tz / len - m.dz) * turn;
@@ -923,7 +1048,7 @@ export function createCombat(scene, fields, elevation, wet = null) {
       m.x += m.dx * HOSTILE_SPEED * dt;
       m.y += m.dy * HOSTILE_SPEED * dt;
       m.z += m.dz * HOSTILE_SPEED * dt;
-      if (len < 24) {
+      if (!decoy && len < 24) {
         fx.hit = true;
         fx.boom = true;
         player.speed *= 0.62;
@@ -943,6 +1068,7 @@ export function createCombat(scene, fields, elevation, wet = null) {
       }
       if (m.life <= 0) m.mesh.visible = false;
     }
+    player.missileDist = nearestMissile;
     if (!threat && player.flying) {
       for (const a of craft) {
         if (!a.alive || a.role !== "drone" || !hunterIds.has(a.id)) continue;

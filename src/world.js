@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { heightAt } from "./elev.js?v=49";
 import { buildingContact, cellsAround, nearestRoad, onRoad, roadDeck, waterAt } from "./geo.js?v=67";
 import { fieldAt } from "./airfields.js?v=1";
-import { createCombat } from "./combat.js?v=12";
+import { createCombat } from "./combat.js?v=13";
 
 const CLASS_COLOR = {
   motorway: [1, 1, 1],
@@ -1879,8 +1879,12 @@ export function createWorld(city, index, flight = false) {
       if (plane && player.flight) {
         plane.visible = true;
         plane.position.set(player.x, player.y, player.z);
-        plane.rotation.order = "YXZ";
-        plane.rotation.set(player.wrecked ? -0.7 : -player.pitch, player.heading, player.wrecked ? 0.35 : -player.roll);
+        if (player.wrecked) {
+          plane.rotation.order = "YXZ";
+          plane.rotation.set(-0.7, player.heading, 0.35);
+        } else {
+          plane.quaternion.set(player.qx || 0, player.qy || 0, player.qz || 0, player.qw == null ? 1 : player.qw);
+        }
         const gear = plane.userData.gear;
         if (gear) {
           const want = !player.flying || player.gearDown !== false ? 1 : 0;

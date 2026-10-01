@@ -1,5 +1,5 @@
 export function createPlayer(spawn) {
-  return {
+  const player = {
     x: spawn.x,
     z: spawn.z,
     y: 0.45,
@@ -11,6 +11,10 @@ export function createPlayer(spawn) {
     wheel: 0,
     pitch: 0,
     roll: 0,
+    qx: 0,
+    qy: 0,
+    qz: 0,
+    qw: 1,
     vy: 0,
     flying: false,
     jets: false,
@@ -22,12 +26,16 @@ export function createPlayer(spawn) {
     flaps: 0,
     spin: 0,
     throttle: 0,
-    missiles: 6,
+    missiles: 8,
+    rounds: 300,
+    flares: 24,
     crashed: 0,
     wrecked: false,
     landStress: 0,
     wet: false,
   };
+  oriFromEuler(player);
+  return player;
 }
 
 export function resetPlayer(player, spawn) {
@@ -50,11 +58,17 @@ export function resetPlayer(player, spawn) {
   player.flaps = 0;
   player.spin = 0;
   player.throttle = 0;
-  player.missiles = 6;
+  player.missiles = 8;
+  player.rounds = 300;
+  player.flares = 24;
+  player.rotate = 0;
+  player.noseSm = 0;
+  player.rollSm = 0;
   player.wet = false;
   player.wrecked = false;
   player.wreckShown = false;
   player.landStress = 0;
+  oriFromEuler(player);
 }
 
 export function placeOnRoad(player, hit) {
@@ -73,6 +87,7 @@ export function placeOnRoad(player, hit) {
   player.jets = false;
   player.wings = 0;
   player.speed = Math.min(player.speed, 6);
+  oriFromEuler(player);
   parkVelocity(player);
 }
 
@@ -172,26 +187,34 @@ function stepFlight(player, input, dt, world) {
     else player.speed -= Math.min(player.speed - setSpeed, (flap ? 16 : 10) * dt);
     if (player.throttle <= 0.01) player.speed = Math.max(0, player.speed - 8 * dt);
     player.speed = Math.max(0, player.speed);
-    player.wheel = steer;
-    const steerRate = Math.min(0.85, 0.22 + player.speed * 0.006);
-    if (player.speed > 2) player.heading += steer * dt * steerRate;
-    player.pitch = 0;
-    player.roll = 0;
+    const wheelK = 1 - Math.exp(-dt * 5);
+    player.wheel += (steer - player.wheel) * wheelK;
+    const steerRate = Math.min(0.62, 0.1 + player.speed * 0.004);
+    if (player.speed > 2) player.heading += player.wheel * dt * steerRate;
+    const wantRotate = player.speed > rotate * 0.9 && input.noseUp ? 1 : 0;
+    player.rotate = (player.rotate || 0) + (wantRotate - (player.rotate || 0)) * Math.min(1, dt * 2.4);
+    player.pitch = player.rotate * (flap ? 0.2 : 0.15);
+    player.roll += (0 - (player.roll || 0)) * Math.min(1, dt * 4);
     player.vy = 0;
+    player.airTime = 0;
+    player.noseSm = 0;
+    player.rollSm = 0;
     player.x += Math.sin(player.heading) * player.speed * dt;
     player.z += Math.cos(player.heading) * player.speed * dt;
     const groundHit = slideBuildings(player, world);
     player.y = ground() + 0.45;
     player.agl = 0;
     if (groundHit > 16) return wreckPlayer(player, world);
-    if (player.speed > rotate && input.noseUp) {
+    if (player.rotate > 0.62 && player.speed > rotate) {
       player.flying = true;
-      player.pitch = flap ? 0.22 : 0.16;
-      player.vy = flap ? 8 : 12;
+      player.airTime = 0;
+      player.vy = Math.sin(player.pitch) * player.speed + 2.2;
     }
+    oriFromEuler(player);
   } else {
-    const noseNow = wrapAngle(player.pitch);
-    const gamma = Math.sin(noseNow);
+    if (player.qw == null) oriFromEuler(player);
+    const flightNose = oriAxis(player, 0, 0, 1);
+    const gamma = flightNose.y;
     let drag = player.jets ? 0.4 : 1.2;
     if (flap) drag += 7;
     if (player.gearDown) drag += 4;
@@ -208,64 +231,86 @@ function stepFlight(player, input, dt, world) {
     const below = player.spin ? player.speed < stall * 1.2 : player.speed < stall;
     const nose = (input.noseUp ? 1 : 0) - (input.noseDown ? 1 : 0);
     const rollInput = steer;
+    const noseK = 1 - Math.exp(-dt * 8);
+    const rollK = 1 - Math.exp(-dt * 6);
+    player.noseSm = (player.noseSm || 0) + (nose - (player.noseSm || 0)) * noseK;
+    player.rollSm = (player.rollSm || 0) + (rollInput - (player.rollSm || 0)) * rollK;
+    const noseCmd = player.noseSm;
+    const rollCmd = player.rollSm;
     const auth = Math.min(1.15, 0.5 + player.speed / 160);
     if (below) {
-      if (!player.spin) player.spin = wrapAngle(player.roll) >= 0 ? 1 : -1;
-      player.pitch += nose * 0.45 * dt;
-      player.pitch += (-1.2 - wrapAngle(player.pitch)) * Math.min(1, dt * 1.8);
-      player.roll += (player.spin * 2.8 + rollInput * 0.45) * dt;
-      player.heading += player.spin * 2.2 * dt;
+      if (!player.spin) player.spin = (player.roll || 0) >= 0 ? 1 : -1;
+      oriRotateLocal(player, 1, 0, 0, -(noseCmd * 0.45) * dt);
+      oriRotateLocal(player, 0, 0, 1, -(player.spin * 2.8 + rollCmd * 0.45) * dt);
+      const dropped = oriAxis(player, 0, 0, 1);
+      const axisLen = Math.hypot(dropped.x, dropped.z);
+      if (axisLen > 0.08) {
+        const have = Math.asin(Math.max(-1, Math.min(1, dropped.y)));
+        const pull = (-1.2 - have) * Math.min(1, dt * 1.8);
+        oriRotateWorld(player, dropped.z / axisLen, 0, -dropped.x / axisLen, pull);
+      }
+      oriRotateWorld(player, 0, 1, 0, player.spin * 2.2 * dt);
     } else {
       player.spin = 0;
-      player.pitch += nose * 1.35 * auth * dt;
-      player.roll += rollInput * 3.05 * auth * dt;
-      if (!rollInput) {
-        const turns = Math.PI * 2;
-        const canopyUp = Math.cos(player.pitch) * Math.cos(player.roll) > 0.35;
-        const upright = canopyUp && Math.cos(player.pitch) < 0 ? Math.PI : 0;
-        const level = upright + Math.round((player.roll - upright) / turns) * turns;
-        player.roll += (level - player.roll) * Math.min(1, dt * 2.2);
-      }
-      const bank = wrapAngle(player.roll);
-      const cp = Math.cos(player.pitch);
-      player.heading += Math.sin(bank) * 1.25 * dt * Math.max(0.3, Math.abs(cp));
+      oriRotateLocal(player, 1, 0, 0, -(noseCmd * 1.35 * auth) * dt);
+      oriRotateLocal(player, 0, 0, 1, -(rollCmd * 3.05 * auth) * dt);
+      const right = oriAxis(player, 1, 0, 0);
+      const up = oriAxis(player, 0, 1, 0);
+      const aimed = oriAxis(player, 0, 0, 1);
+      const bank = Math.atan2(-right.y, up.y);
+      oriRotateWorld(player, 0, 1, 0, Math.sin(bank) * 1.25 * dt * Math.max(0.3, Math.hypot(aimed.x, aimed.z)));
     }
+    const aimed = oriAxis(player, 0, 0, 1);
+    const lifted = oriAxis(player, 0, 1, 0);
+    const right = oriAxis(player, 1, 0, 0);
+    player.pitch = Math.asin(Math.max(-1, Math.min(1, aimed.y)));
+    player.roll = Math.atan2(-right.y, lifted.y);
+    player.heading = Math.atan2(aimed.x, aimed.z);
     player.wheel += (0 - player.wheel) * Math.min(1, dt * 4);
-    const cp = Math.cos(player.pitch);
-    const sp = Math.sin(player.pitch);
+    const cp = Math.hypot(aimed.x, aimed.z);
+    const sp = aimed.y;
     let climb = sp * player.speed;
     if (flap && !player.spin) climb += 6 * Math.max(0, cp);
     if (player.spin) climb -= (stall - player.speed) * 2.4 + 8;
     const deck = ground();
     const agl = player.y - deck;
     player.agl = agl;
-    if (!player.spin && player.gearDown && agl < 18 && agl > 0 && player.vy < 4) {
-      climb *= 0.42 + agl / 30;
+    player.airTime = (player.airTime || 0) + dt;
+    if (!player.spin && player.gearDown !== false && agl < 20 && agl > 0 && climb < -2.2) {
+      const pad = world.runway?.(player.x, player.z);
+      if (pad) {
+        const blend = (1 - agl / 20) * 0.42;
+        climb += (-1.5 - climb) * blend;
+      }
     }
-    player.vy = climb;
+    const vyK = !player.spin && agl < 24 ? 14 : 6;
+    player.vy += (climb - player.vy) * Math.min(1, dt * vyK);
     player.y += player.vy * dt;
     const ceiling = world.elevation(player.x, player.z) + (player.jets ? 6500 : 3400);
     if (player.y > ceiling) {
       player.y = ceiling;
       player.vy = Math.min(0, player.vy);
     }
-    player.x += Math.sin(player.heading) * player.speed * cp * dt;
-    player.z += Math.cos(player.heading) * player.speed * cp * dt;
+    player.x += aimed.x * player.speed * dt;
+    player.z += aimed.z * player.speed * dt;
     const hit = slideBuildings(player, world);
     if (hit > 12) return wreckPlayer(player, world);
     const pad = world.runway?.(player.x, player.z);
     player.landStress = landingStress(player, agl, !!pad);
-    if (player.y <= deck + 0.55) {
+    if (player.airTime > 0.45 && player.y <= deck + 0.55) {
       const fatal = !pad || player.landStress >= 0.82 || player.gearDown === false || player.spin;
       if (fatal) return wreckPlayer(player, world);
       player.y = deck + 0.45;
       player.flying = false;
-      player.pitch = 0;
-      player.roll = 0;
       player.vy = 0;
       player.spin = 0;
       player.gearDown = true;
       player.landStress = 0;
+      player.rotate = Math.max(0, Math.min(1, player.pitch / (flap ? 0.2 : 0.15)));
+      player.roll *= 0.55;
+      player.noseSm = 0;
+      player.rollSm = 0;
+      oriFromEuler(player);
     }
   }
   player.vx = Math.sin(player.heading) * player.speed;
@@ -276,6 +321,89 @@ function stepFlight(player, input, dt, world) {
   const stallKmh = flap ? 60 : 130;
   player.stallWarn = player.flying && !player.spin && kmhNow < stallKmh + 15 && kmhNow + 1 >= stallKmh;
   return player;
+}
+
+function setOri(player, x, y, z, w) {
+  const n = Math.hypot(x, y, z, w) || 1;
+  player.qx = x / n;
+  player.qy = y / n;
+  player.qz = z / n;
+  player.qw = w / n;
+}
+
+function oriFromEuler(player) {
+  const x = -(player.pitch || 0);
+  const y = player.heading || 0;
+  const z = -(player.roll || 0);
+  const c1 = Math.cos(x / 2);
+  const c2 = Math.cos(y / 2);
+  const c3 = Math.cos(z / 2);
+  const s1 = Math.sin(x / 2);
+  const s2 = Math.sin(y / 2);
+  const s3 = Math.sin(z / 2);
+  setOri(
+    player,
+    s1 * c2 * c3 + c1 * s2 * s3,
+    c1 * s2 * c3 - s1 * c2 * s3,
+    c1 * c2 * s3 - s1 * s2 * c3,
+    c1 * c2 * c3 + s1 * s2 * s3,
+  );
+}
+
+function mulOri(player, x, y, z, w) {
+  const qx = player.qx;
+  const qy = player.qy;
+  const qz = player.qz;
+  const qw = player.qw;
+  setOri(
+    player,
+    qw * x + qx * w + qy * z - qz * y,
+    qw * y - qx * z + qy * w + qz * x,
+    qw * z + qx * y - qy * x + qz * w,
+    qw * w - qx * x - qy * y - qz * z,
+  );
+}
+
+function preMulOri(player, x, y, z, w) {
+  const qx = player.qx;
+  const qy = player.qy;
+  const qz = player.qz;
+  const qw = player.qw;
+  setOri(
+    player,
+    w * qx + x * qw + y * qz - z * qy,
+    w * qy - x * qz + y * qw + z * qx,
+    w * qz + x * qy - y * qx + z * qw,
+    w * qw - x * qx - y * qy - z * qz,
+  );
+}
+
+function oriRotateLocal(player, ax, ay, az, angle) {
+  const h = angle * 0.5;
+  const s = Math.sin(h);
+  mulOri(player, ax * s, ay * s, az * s, Math.cos(h));
+}
+
+function oriRotateWorld(player, ax, ay, az, angle) {
+  const h = angle * 0.5;
+  const s = Math.sin(h);
+  preMulOri(player, ax * s, ay * s, az * s, Math.cos(h));
+}
+
+function oriAxis(player, lx, ly, lz) {
+  const qx = player.qx;
+  const qy = player.qy;
+  const qz = player.qz;
+  const qw = player.qw;
+  const ix = qw * lx + qy * lz - qz * ly;
+  const iy = qw * ly + qz * lx - qx * lz;
+  const iz = qw * lz + qx * ly - qy * lx;
+  const iw = -qx * lx - qy * ly - qz * lz;
+  return {
+    x: ix * qw + iw * -qx + iy * -qz - iz * -qy,
+    y: iy * qw + iw * -qy + iz * -qx - ix * -qz,
+    z: iz * qw + iw * -qz + ix * -qy - iy * -qx,
+  };
 }
 
 function wrapAngle(a) {

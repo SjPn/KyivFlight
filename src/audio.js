@@ -1,11 +1,3 @@
-const STATIONS = [
-  { name: "Dnipro FM", scale: [0, 2, 4, 7, 9], tempo: 132, wave: "square" },
-  { name: "Podil", scale: [0, 3, 5, 7, 10], tempo: 96, wave: "triangle" },
-  { name: "Khreshchatyk", scale: [0, 4, 5, 7, 11], tempo: 120, wave: "square" },
-  { name: "Night on Obolon", scale: [0, 3, 5, 10, 12], tempo: 78, wave: "sine" },
-  { name: "Boryspil", scale: [0, 2, 3, 7, 8], tempo: 126, wave: "sawtooth" },
-];
-
 export function createAudio() {
   let ctx = null;
   let engine = null;
@@ -15,11 +7,8 @@ export function createAudio() {
   let roarGain = null;
   let whineGain = null;
   let master = null;
-  let radioGain = null;
-  let station = 0;
-  let radioOn = false;
-  let timer = 0;
-  let step = 0;
+  let threatOsc = null;
+  let threatGain = null;
 
   function ensure() {
     if (ctx) return;
@@ -72,9 +61,6 @@ export function createAudio() {
     engine.start();
 
     engineGain.connect(master);
-    radioGain = ctx.createGain();
-    radioGain.gain.value = 0;
-    radioGain.connect(master);
   }
 
   function burst(seconds, color) {
@@ -93,41 +79,7 @@ export function createAudio() {
     return src;
   }
 
-  function tone(freq, dur, type, gain, when) {
-    const osc = ctx.createOscillator();
-    const g = ctx.createGain();
-    osc.type = type;
-    osc.frequency.value = freq;
-    g.gain.setValueAtTime(gain, when);
-    g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
-    osc.connect(g);
-    g.connect(radioGain);
-    osc.start(when);
-    osc.stop(when + dur + 0.02);
-  }
-
-  function schedule() {
-    if (!ctx || !radioOn) return;
-    const st = STATIONS[station];
-    const beat = 60 / st.tempo;
-    const now = ctx.currentTime;
-    if (timer < now + 0.2) timer = now + 0.05;
-    const base = 196;
-    while (timer < now + 1.4) {
-      const degree = st.scale[step % st.scale.length];
-      const oct = step % 16 < 8 ? 1 : 2;
-      const freq = base * 2 ** (degree / 12) * (oct === 2 && step % 4 === 0 ? 0.5 : 1);
-      tone(freq, beat * 0.85, st.wave, 0.08, timer);
-      if (step % 2 === 0) tone(base / 2, beat * 0.4, "sine", 0.05, timer);
-      timer += beat;
-      step++;
-    }
-  }
-
   return {
-    stations: STATIONS,
-    get station() { return station; },
-    get radioOn() { return radioOn; },
     unlock() {
       ensure();
       ctx.resume();
@@ -147,7 +99,7 @@ export function createAudio() {
       roarGain.gain.setTargetAtTime(burn ? 1 : 0.62, now, 0.1);
       whineGain.gain.setTargetAtTime(burn ? 0.7 : air ? 0.28 : 0.12, now, 0.1);
       const vol = Math.min(0.42, (air ? 0.08 : 0.05) + Math.min(kmh, 2400) / 7800 + (burn ? 0.12 : 0));
-      engineGain.gain.setTargetAtTime(radioOn ? vol * 0.5 : vol, now, 0.08);
+      engineGain.gain.setTargetAtTime(vol, now, 0.08);
     },
     shot(missile) {
       ensure();
@@ -223,33 +175,68 @@ export function createAudio() {
       o.start(now);
       o.stop(now + 0.18);
     },
-    warn() {
+    warn(urgent = 0) {
+      ensure();
+      const now = ctx.currentTime;
+      const u = Math.max(0, Math.min(1, urgent || 0));
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "square";
+      o.frequency.value = 640 + u * 560;
+      const dur = 0.09 - u * 0.045;
+      g.gain.setValueAtTime(0.04 + u * 0.02, now);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      o.connect(g);
+      g.connect(master);
+      o.start(now);
+      o.stop(now + dur + 0.01);
+    },
+    threat(on, urgent = 1) {
+      if (!on) {
+        if (!threatOsc || !ctx) return;
+        const now = ctx.currentTime;
+        const gain = threatGain;
+        const osc = threatOsc;
+        threatOsc = null;
+        threatGain = null;
+        gain.gain.cancelScheduledValues(now);
+        gain.gain.setValueAtTime(Math.max(0.0001, gain.gain.value), now);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.06);
+        osc.stop(now + 0.07);
+        return;
+      }
+      ensure();
+      const u = Math.max(0, Math.min(1, urgent || 0));
+      const freq = 1040 + u * 280;
+      const now = ctx.currentTime;
+      if (!threatOsc) {
+        threatOsc = ctx.createOscillator();
+        threatGain = ctx.createGain();
+        threatOsc.type = "square";
+        threatOsc.frequency.value = freq;
+        threatGain.gain.setValueAtTime(0.0001, now);
+        threatGain.gain.exponentialRampToValueAtTime(0.042, now + 0.03);
+        threatOsc.connect(threatGain);
+        threatGain.connect(master);
+        threatOsc.start(now);
+      } else {
+        threatOsc.frequency.setTargetAtTime(freq, now, 0.04);
+      }
+    },
+    flare() {
       ensure();
       const now = ctx.currentTime;
       const o = ctx.createOscillator();
       const g = ctx.createGain();
-      o.type = "square";
-      o.frequency.value = 740;
-      g.gain.setValueAtTime(0.045, now);
-      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.07);
+      o.type = "sawtooth";
+      o.frequency.setValueAtTime(1680, now);
+      o.frequency.exponentialRampToValueAtTime(380, now + 0.16);
+      g.gain.setValueAtTime(0.03, now);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
       o.connect(g);
       g.connect(master);
       o.start(now);
-      o.stop(now + 0.08);
-    },
-    say(line) {
-      ensure();
-      const talk = window.speechSynthesis;
-      if (!talk || !line) return;
-      const utter = new SpeechSynthesisUtterance(line);
-      utter.lang = "en-US";
-      utter.rate = 1.04;
-      utter.pitch = 0.82;
-      utter.volume = 0.95;
-      const voice = talk.getVoices().find((v) => /en[-_]US/i.test(v.lang)) || talk.getVoices().find((v) => /^en/i.test(v.lang));
-      if (voice) utter.voice = voice;
-      talk.cancel();
-      talk.speak(utter);
+      o.stop(now + 0.2);
     },
     lock() {
       ensure();
@@ -280,34 +267,6 @@ export function createAudio() {
       g.connect(master);
       o.start();
       o.stop(ctx.currentTime + 0.4);
-    },
-    blip(freq = 660) {
-      if (!ctx) return;
-      tone(freq, 0.12, "square", 0.07, ctx.currentTime);
-    },
-    toggleRadio() {
-      ensure();
-      radioOn = !radioOn;
-      radioGain.gain.setTargetAtTime(radioOn ? 1 : 0, ctx.currentTime, 0.05);
-      if (radioOn) {
-        timer = 0;
-        schedule();
-      }
-      return radioOn;
-    },
-    nextStation() {
-      ensure();
-      station = (station + 1) % STATIONS.length;
-      step = 0;
-      timer = 0;
-      if (!radioOn) {
-        radioOn = true;
-        radioGain.gain.setTargetAtTime(1, ctx.currentTime, 0.05);
-      }
-      return STATIONS[station];
-    },
-    tick() {
-      if (radioOn) schedule();
     },
   };
 }
