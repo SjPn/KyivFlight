@@ -1,8 +1,8 @@
 import * as THREE from "three";
-import { heightAt } from "./elev.js?v=49";
-import { buildingContact, cellsAround, nearestRoad, onRoad, roadDeck, waterAt } from "./geo.js?v=67";
-import { fieldAt } from "./airfields.js?v=1";
-import { createCombat } from "./combat.js?v=14";
+import { heightAt } from "./elev.js?v=50";
+import { buildingContact, cellsAround, nearestRoad, onRoad, roadDeck, waterAt } from "./geo.js?v=68";
+import { fieldAt } from "./airfields.js?v=2";
+import { createCombat } from "./combat.js?v=16";
 
 const CLASS_COLOR = {
   motorway: [1, 1, 1],
@@ -489,27 +489,143 @@ function makeRoads(city, index, flight) {
   return { mesh: root, rails: railSegs };
 }
 
-function ribbon(p, width, y, hl, hr) {
+function reverseRiver(river) {
+  const n = river.p.length / 2;
+  const p = [];
+  const hl = river.hl ? [] : null;
+  const hr = river.hr ? [] : null;
+  for (let i = n - 1; i >= 0; i--) {
+    p.push(river.p[i * 2], river.p[i * 2 + 1]);
+    if (hl) {
+      hl.push(river.hl[i]);
+      hr.push(river.hr[i]);
+    }
+  }
+  return { p, hl, hr, w: river.w, n: river.n };
+}
+
+function catRiver(a, b) {
+  const p = a.p.slice();
+  const hl = a.hl && b.hl ? a.hl.slice() : null;
+  const hr = a.hr && b.hr ? a.hr.slice() : null;
+  const n = b.p.length / 2;
+  for (let i = 1; i < n; i++) {
+    p.push(b.p[i * 2], b.p[i * 2 + 1]);
+    if (hl) {
+      hl.push(b.hl[i]);
+      hr.push(b.hr[i]);
+    }
+  }
+  return { p, hl, hr, w: a.w || b.w, n: a.n || b.n };
+}
+
+function stitchRivers(rivers) {
+  const groups = new Map();
+  for (const river of rivers || []) {
+    if (!river.p || river.p.length < 4) continue;
+    const key = river.n || "";
+    let list = groups.get(key);
+    if (!list) groups.set(key, list = []);
+    list.push({ p: river.p, hl: river.hl || null, hr: river.hr || null, w: river.w, n: river.n });
+  }
+  const out = [];
+  const touch = (p, i, q, j) => Math.hypot(p[i] - q[j], p[i + 1] - q[j + 1]) < 20;
+  for (const list of groups.values()) {
+    const unused = list.slice();
+    while (unused.length) {
+      let cur = unused.pop();
+      let grew = true;
+      while (grew) {
+        grew = false;
+        for (let i = 0; i < unused.length; i++) {
+          let other = unused[i];
+          const a0 = 0;
+          const a1 = cur.p.length - 2;
+          const b0 = 0;
+          const b1 = other.p.length - 2;
+          let next = null;
+          if (touch(cur.p, a1, other.p, b0)) next = catRiver(cur, other);
+          else if (touch(cur.p, a1, other.p, b1)) next = catRiver(cur, reverseRiver(other));
+          else if (touch(cur.p, a0, other.p, b1)) next = catRiver(other, cur);
+          else if (touch(cur.p, a0, other.p, b0)) next = catRiver(reverseRiver(other), cur);
+          if (!next) continue;
+          cur = next;
+          unused.splice(i, 1);
+          grew = true;
+          break;
+        }
+      }
+      out.push(cur);
+    }
+  }
+  return out;
+}
+
+function riverSurface(river) {
+  const src = river.p;
+  const n = src.length / 2;
+  if (n < 2) return [];
+  const samples = [];
+  const pushSample = (x, z, l, r) => {
+    const prev = samples[samples.length - 1];
+    if (prev && Math.hypot(x - prev.x, z - prev.z) < 8) return;
+    samples.push({ x, z, y: heightAt(x, z) + 1.2, l, r });
+  };
+  for (let i = 0; i < n - 1; i++) {
+    const x0 = src[i * 2];
+    const z0 = src[i * 2 + 1];
+    const x1 = src[(i + 1) * 2];
+    const z1 = src[(i + 1) * 2 + 1];
+    const L = Math.hypot(x1 - x0, z1 - z0);
+    if (L < 0.5) continue;
+    const steps = Math.max(1, Math.ceil(L / 100));
+    const l0 = river.hl ? river.hl[i] : (river.w || 80) * 0.5;
+    const l1 = river.hl ? river.hl[Math.min(n - 1, i + 1)] : (river.w || 80) * 0.5;
+    const r0 = river.hr ? river.hr[i] : (river.w || 80) * 0.5;
+    const r1 = river.hr ? river.hr[Math.min(n - 1, i + 1)] : (river.w || 80) * 0.5;
+    for (let s = 0; s < steps; s++) {
+      const t = s / steps;
+      pushSample(x0 + (x1 - x0) * t, z0 + (z1 - z0) * t, l0 + (l1 - l0) * t, r0 + (r1 - r0) * t);
+    }
+  }
+  const last = n - 1;
+  pushSample(
+    src[last * 2],
+    src[last * 2 + 1],
+    river.hl ? river.hl[last] : (river.w || 80) * 0.5,
+    river.hr ? river.hr[last] : (river.w || 80) * 0.5,
+  );
   const positions = [];
   const left = [];
   const right = [];
-  for (let i = 0; i < p.length; i += 2) {
-    const i0 = Math.max(0, i - 2);
-    const i1 = Math.min(p.length - 2, i + 2);
-    let dx = p[i1] - p[i0];
-    let dz = p[i1 + 1] - p[i0 + 1];
+  for (let i = 0; i < samples.length; i++) {
+    const prev = samples[Math.max(0, i - 1)];
+    const next = samples[Math.min(samples.length - 1, i + 1)];
+    let dx = next.x - prev.x;
+    let dz = next.z - prev.z;
     const L = Math.hypot(dx, dz) || 1;
     dx /= L;
     dz /= L;
-    const vi = i / 2;
-    const l = hl ? hl[vi] : width * 0.5;
-    const r = hr ? hr[vi] : width * 0.5;
-    const py = typeof y === "function" ? y(p[i], p[i + 1]) : y;
-    left.push([p[i] - dz * l, py, p[i + 1] + dx * l]);
-    right.push([p[i] + dz * r, py, p[i + 1] - dx * r]);
+    const s = samples[i];
+    left.push([s.x - dz * s.l, s.y, s.z + dx * s.l]);
+    right.push([s.x + dz * s.r, s.y, s.z - dx * s.r]);
+    const rad = Math.max(s.l, s.r);
+    const wedges = 8;
+    for (let k = 0; k < wedges; k++) {
+      const a0 = (k / wedges) * Math.PI * 2;
+      const a1 = ((k + 1) / wedges) * Math.PI * 2;
+      positions.push(
+        s.x, s.y, s.z,
+        s.x + Math.cos(a0) * rad, s.y, s.z + Math.sin(a0) * rad,
+        s.x + Math.cos(a1) * rad, s.y, s.z + Math.sin(a1) * rad,
+      );
+    }
   }
   for (let i = 0; i < left.length - 1; i++) {
-    const a = left[i], b = right[i], c = right[i + 1], d = left[i + 1];
+    const a = left[i];
+    const b = right[i];
+    const c = right[i + 1];
+    const d = left[i + 1];
     positions.push(...a, ...c, ...b, ...a, ...d, ...c);
   }
   return positions;
@@ -1308,11 +1424,11 @@ function plate(verts, material) {
 
 function makePlane() {
   const g = new THREE.Group();
-  const paint = new THREE.MeshPhongMaterial({ color: 0xe7e1d6, specular: 0xd5dbe4, shininess: 42, side: THREE.DoubleSide });
-  const accent = new THREE.MeshPhongMaterial({ color: 0xf2c14e, shininess: 20, side: THREE.DoubleSide });
+  const paint = new THREE.MeshPhongMaterial({ color: 0x0057b8, specular: 0x9ec4ea, shininess: 46, side: THREE.DoubleSide });
+  const surface = new THREE.MeshPhongMaterial({ color: 0x1a6fbe, specular: 0xc5d8ee, shininess: 32, side: THREE.DoubleSide });
+  const accent = new THREE.MeshPhongMaterial({ color: 0xffd100, shininess: 28, side: THREE.DoubleSide });
   const dark = new THREE.MeshPhongMaterial({ color: 0x232830, shininess: 18 });
-  const glass = new THREE.MeshPhongMaterial({ color: 0x8eb4cc, transparent: true, opacity: 0.55, shininess: 90 });
-  const red = new THREE.MeshPhongMaterial({ color: 0xc4473a, shininess: 20 });
+  const glass = new THREE.MeshPhongMaterial({ color: 0xb7d4ea, transparent: true, opacity: 0.55, shininess: 90 });
   const fuse = shell([
     new THREE.Vector2(0.05, 0),
     new THREE.Vector2(0.28, 0.45),
@@ -1335,9 +1451,25 @@ function makePlane() {
   frame.rotation.x = Math.PI / 2;
   frame.scale.set(0.85, 1.3, 0.7);
   frame.position.set(0, 2.18, 2.15);
-  const roundel = new THREE.Mesh(new THREE.CircleGeometry(0.28, 16), red);
-  roundel.position.set(0.9, 1.72, 1.15);
+  const roundel = new THREE.Mesh(new THREE.CircleGeometry(0.15, 16), accent);
+  roundel.position.set(0.94, 1.55, 0.4);
   roundel.rotation.y = Math.PI / 2;
+  const roundelIn = new THREE.Mesh(new THREE.CircleGeometry(0.065, 12), paint);
+  roundelIn.position.set(0.96, 1.55, 0.4);
+  roundelIn.rotation.y = Math.PI / 2;
+  const roundelL = roundel.clone();
+  roundelL.position.x = -0.94;
+  roundelL.rotation.y = -Math.PI / 2;
+  const roundelInL = roundelIn.clone();
+  roundelInL.position.x = -0.96;
+  roundelInL.rotation.y = -Math.PI / 2;
+  const cheat = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.05, 2.1), accent);
+  cheat.position.set(0.9, 1.66, -0.05);
+  const cheatL = cheat.clone();
+  cheatL.position.x = -0.9;
+  const sash = new THREE.Mesh(new THREE.TorusGeometry(0.9, 0.026, 8, 24), accent);
+  sash.rotation.y = Math.PI / 2;
+  sash.position.set(0, 1.55, 0.35);
   const wingVerts = (span) => [
     0, 0.055, 1.15,
     span, 0.02, -0.7,
@@ -1352,14 +1484,32 @@ function makePlane() {
     const pivot = new THREE.Group();
     pivot.position.set(sign * 0.72, 1.42, 0.05);
     const wing = plate(wingVerts(sign * 7.15), paint);
-    const fence = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.28, 0.7), accent);
-    fence.position.set(sign * 6.7, 0.16, -1.05);
-    const flapMat = new THREE.MeshPhongMaterial({ color: 0xc9c3b6, shininess: 20, side: THREE.DoubleSide });
-    const flap = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.08, 1.05), flapMat);
-    flap.geometry.translate(0, 0, -0.52);
-    flap.position.set(sign * 3.2, 0.02, -1.78);
-    pivot.add(wing, fence, flap);
+    const fence = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.22, 0.42), accent);
+    fence.position.set(sign * 5.7, 0.12, -1.05);
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(2.9, 0.012, 0.1), accent);
+    stripe.position.set(sign * 2.05, 0.058, -0.62);
+    const flap = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.04, 0.32), surface);
+    flap.geometry.translate(0, 0, -0.16);
+    flap.position.set(sign * 1.8, 0.02, -1.4);
+    const aileron = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.04, 0.32), surface);
+    aileron.geometry.translate(0, 0, -0.16);
+    aileron.position.set(sign * 4.95, 0.02, -1.24);
+    aileron.userData.sign = sign;
+    const aileronEdge = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.018, 0.04), accent);
+    aileronEdge.position.set(0, 0.016, -0.28);
+    aileron.add(aileronEdge);
+    const span = 2.45;
+    const le = 1.15 + (span / 7.15) * -1.85;
+    const te = -1.85 + (span / 6.72) * 0.3;
+    const mark = new THREE.Mesh(new THREE.CircleGeometry(0.28, 16), accent);
+    mark.rotation.x = -Math.PI / 2;
+    mark.position.set(sign * span, 0.052, (le + te) / 2);
+    const markIn = new THREE.Mesh(new THREE.CircleGeometry(0.12, 12), paint);
+    markIn.rotation.x = -Math.PI / 2;
+    markIn.position.set(sign * span, 0.064, (le + te) / 2);
+    pivot.add(wing, fence, stripe, flap, aileron, mark, markIn);
     pivot.userData.flap = flap;
+    pivot.userData.aileron = aileron;
     return pivot;
   };
   const wingL = swept(-1);
@@ -1405,13 +1555,17 @@ function makePlane() {
   const finL = plate(finGeo, paint);
   finL.position.set(-0.72, 1.7, -4.55);
   finL.rotation.z = 0.18;
-  const finCapL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.16, 0.42), accent);
-  finCapL.position.set(-0.78, 3.42, -4.85);
+  const finCapL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.07, 0.24), accent);
+  finCapL.position.set(0.045, 1.7, -0.3);
+  const finStripeL = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.8, 0.06), accent);
+  finStripeL.position.set(0.05, 1.05, -0.28);
+  finL.add(finCapL, finStripeL);
   const finR = plate(finGeo, paint);
   finR.position.set(0.72, 1.7, -4.55);
   finR.rotation.z = -0.18;
   const finCapR = finCapL.clone();
-  finCapR.position.x = 0.78;
+  const finStripeR = finStripeL.clone();
+  finR.add(finCapR, finStripeR);
   const nacelleGeo = new THREE.CylinderGeometry(0.4, 0.5, 3.5, 16);
   const nacelleL = new THREE.Mesh(nacelleGeo, dark);
   nacelleL.rotation.x = Math.PI / 2;
@@ -1441,19 +1595,19 @@ function makePlane() {
   plugL.position.set(-1.15, 1.02, -3.32);
   const plugR = plugL.clone();
   plugR.position.x = 1.15;
-  const spine = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.06, 10.6), accent);
-  spine.position.set(0, 2.12, -0.15);
-  const wingMark = (x) => {
-    const disc = new THREE.Mesh(new THREE.CircleGeometry(0.58, 18), red);
-    disc.rotation.x = -Math.PI / 2;
-    disc.position.set(x, 1.5, -0.4);
-    const ring = new THREE.Mesh(new THREE.RingGeometry(0.34, 0.58, 18), accent);
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.set(x, 1.52, -0.4);
-    return [disc, ring];
+  const spine = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.028, 2.3), accent);
+  spine.position.set(0, 2.45, 0.12);
+  const elevator = (sign) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.032, 0.28), surface);
+    mesh.geometry.translate(0, 0, -0.14);
+    mesh.position.set(sign * 1.0, 1.64, -5.56);
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.016, 0.035), accent);
+    edge.position.set(0, 0.014, -0.25);
+    mesh.add(edge);
+    return mesh;
   };
-  const [markL, ringL] = wingMark(-3.35);
-  const [markR, ringR] = wingMark(3.35);
+  const elevR = elevator(1);
+  const elevL = elevator(-1);
   const gear = new THREE.Group();
   const tire = new THREE.MeshLambertMaterial({ color: 0x1a1e24 });
   const hub = new THREE.MeshLambertMaterial({ color: 0xc5ccd6 });
@@ -1476,11 +1630,11 @@ function makePlane() {
   gear.userData.nose = noseLeg;
   gear.userData.t = 1;
   g.add(
-    fuse, radome, canopy, frame, roundel,
-    glove, gloveL, wingL, wingR, stab, stabL,
-    finL, finR, finCapL, finCapR,
+    fuse, radome, canopy, frame, roundel, roundelIn, roundelL, roundelInL, cheat, cheatL, sash,
+    glove, gloveL, wingL, wingR, stab, stabL, elevL, elevR,
+    finL, finR,
     nacelleL, nacelleR, lipL, lipR, nozzleL, nozzleR, plugL, plugR, flameL, flameR,
-    spine, markL, ringL, markR, ringR, gear,
+    spine, gear,
   );
   g.userData.gear = gear;
   g.userData.jets = [flameL, flameR];
@@ -1488,6 +1642,8 @@ function makePlane() {
   g.userData.wingL = wingL;
   g.userData.wingR = wingR;
   g.userData.flaps = [wingL.userData.flap, wingR.userData.flap];
+  g.userData.ailerons = [wingL.userData.aileron, wingR.userData.aileron];
+  g.userData.elevators = [elevL, elevR];
   g.userData.sweep = 0;
   g.userData.flapT = 0;
   return g;
@@ -1589,6 +1745,12 @@ export function createWorld(city, index, flight = false) {
         const v = (iz * n + ix) * 3;
         groundPos[v + 1] = Math.min(h, (h * 2 + low) / 3) - 0.3;
         landTint(h, v);
+        if (waterAt(index, groundPos[v], groundPos[v + 2])) {
+          groundPos[v + 1] = Math.min(groundPos[v + 1], h - 1.8);
+          groundCol[v] = 0.05;
+          groundCol[v + 1] = 0.2;
+          groundCol[v + 2] = 0.36;
+        }
       }
     }
     if (!flight && step < 80) {
@@ -1666,15 +1828,22 @@ export function createWorld(city, index, flight = false) {
   }
 
   const waterPos = [];
-  for (const river of city.rivers) waterPos.push(...ribbon(river.p, river.w, (x, z) => heightAt(x, z) + 0.55, river.hl, river.hr));
+  const appendPos = (extra) => {
+    for (let i = 0; i < extra.length; i++) waterPos.push(extra[i]);
+  };
+  for (const river of stitchRivers(city.rivers)) appendPos(riverSurface(river));
   for (const lake of city.lakes || []) {
     let bed = Infinity;
     for (let i = 0; i < lake.length; i += 2) bed = Math.min(bed, heightAt(lake[i], lake[i + 1]));
-    waterPos.push(...fan(lake, (bed === Infinity ? 0 : bed) + 0.4));
+    appendPos(fan(lake, (bed === Infinity ? 0 : bed) + 0.4));
   }
-  const water = meshFrom(waterPos, 0x1d5f92, 0.92);
+  const water = meshFrom(waterPos, 0x1d5f92, 1);
   if (water) {
     water.frustumCulled = false;
+    water.renderOrder = 2;
+    water.material.polygonOffset = true;
+    water.material.polygonOffsetFactor = -3;
+    water.material.polygonOffsetUnits = -3;
     scene.add(water);
   }
 
@@ -1899,9 +2068,19 @@ export function createWorld(city, index, flight = false) {
         const flapT = plane.userData.flapT || 0;
         const wantFlap = player.flaps > 0.5 ? 1 : 0;
         plane.userData.flapT = flapT + (wantFlap - flapT) * Math.min(1, dt * 3);
-        const flapAng = -plane.userData.flapT * 0.95;
+        const flapAng = -plane.userData.flapT * 0.72;
         for (const flap of plane.userData.flaps || []) {
           if (flap) flap.rotation.x = flapAng;
+        }
+        const rollCmd = player.wrecked ? 0 : (player.rollSm || 0);
+        const pitchCmd = player.wrecked ? 0 : (player.noseSm || 0);
+        plane.userData.ailT = (plane.userData.ailT || 0) + (rollCmd - (plane.userData.ailT || 0)) * Math.min(1, dt * 9);
+        plane.userData.elevT = (plane.userData.elevT || 0) + (pitchCmd - (plane.userData.elevT || 0)) * Math.min(1, dt * 9);
+        for (const aileron of plane.userData.ailerons || []) {
+          if (aileron) aileron.rotation.x = -(aileron.userData.sign || 1) * plane.userData.ailT * 0.7;
+        }
+        for (const elevator of plane.userData.elevators || []) {
+          if (elevator) elevator.rotation.x = plane.userData.elevT * 0.62;
         }
         const sweep = plane.userData.sweep || 0;
         const wantSweep = player.jets ? 1 : 0;
@@ -1909,11 +2088,20 @@ export function createWorld(city, index, flight = false) {
         const fold = plane.userData.sweep * 0.95;
         if (plane.userData.wingL) plane.userData.wingL.rotation.y = -fold;
         if (plane.userData.wingR) plane.userData.wingR.rotation.y = fold;
+        const thr = Math.max(0, Math.min(1, player.throttle || 0));
         const jetOn = !!player.jets;
-        if (plane.userData.flameMat) plane.userData.flameMat.color.setHex(jetOn ? 0xff6a1a : 0x8fb4d4);
+        const plume = (0.32 + thr * 0.62) * (jetOn ? 1.45 : 1);
+        if (plane.userData.flameMat) {
+          plane.userData.flameMat.color.setHex(jetOn ? (thr > 0.6 ? 0xfff0c2 : 0xff6a1a) : (thr > 0.7 ? 0xe7f4ff : 0x7eadd4));
+        }
         for (const flame of plane.userData.jets || []) {
-          flame.visible = true;
-          flame.scale.y = jetOn ? 1.5 + Math.random() * 1.6 : 0.45;
+          flame.visible = thr > 0.03 || jetOn;
+          const flick = 0.94 + Math.random() * 0.12;
+          flame.scale.y = plume * flick;
+          const girth = 0.7 + thr * 0.32;
+          flame.scale.x = girth;
+          flame.scale.z = girth;
+          flame.position.z = -3.18 - plume * 1.05;
         }
       }
       for (const s of sights) {

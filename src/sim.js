@@ -1,4 +1,4 @@
-import { fieldAt, nearestField } from "./airfields.js?v=1";
+import { fieldAt, nearestField } from "./airfields.js?v=2";
 
 function mulberry32(seed) {
   let a = seed >>> 0;

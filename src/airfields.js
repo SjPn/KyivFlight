@@ -447,7 +447,8 @@ export const FIELDS = [
 ];
 
 export function runwayStart(field) {
-  const half = Math.max(40, field.len * 0.5 - 50);
+  const inset = Math.min(280, Math.max(40, field.len * 0.22));
+  const half = Math.max(20, field.len * 0.5 - inset);
   return {
     x: field.x - Math.sin(field.h) * half,
     z: field.z - Math.cos(field.h) * half,

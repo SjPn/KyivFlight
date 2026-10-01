@@ -1,4 +1,4 @@
-import { heightAt } from "./elev.js?v=49";
+import { heightAt } from "./elev.js?v=50";
 
 export const CELL = 80;
 

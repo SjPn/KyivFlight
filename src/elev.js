@@ -11,10 +11,7 @@ let dLat = 1;
 let dLon = 1;
 let data = null;
 
-export async function loadElev(url) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error("Elevation grid missing");
-  const buf = await res.arrayBuffer();
+export function readElev(buf) {
   const view = new DataView(buf);
   rows = view.getUint32(0, true);
   cols = view.getUint32(4, true);
@@ -24,6 +21,12 @@ export async function loadElev(url) {
   dLon = view.getFloat64(32, true);
   data = new Int16Array(buf, 48);
   if (data.length < rows * cols) throw new Error("Elevation grid is short");
+}
+
+export async function loadElev(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Elevation grid missing");
+  readElev(await res.arrayBuffer());
 }
 
 export function heightAt(x, z) {

@@ -247,6 +247,60 @@ export function createCombat(scene, fields, elevation, wet = null) {
   }
   paintParked();
 
+  const DRONE_SLOW = 200 / 3.6;
+  const DRONE_FAST = 500 / 3.6;
+  const BANDIT_SPEED = 600 / 3.6;
+  const CITY_RING = 16000;
+
+  function droneRoute(slot) {
+    const south = slot % 2 === 0;
+    const lap = slot % 4 < 2 ? 1 : -1;
+    const around = [
+      { x: -CITY_RING, z: lap * 4000 },
+      { x: -CITY_RING * 0.45, z: lap * CITY_RING },
+      { x: CITY_RING * 0.2, z: lap * CITY_RING },
+      { x: CITY_RING * 0.9, z: lap * CITY_RING * 0.45 },
+    ];
+    const tail = south
+      ? [
+          { x: lap * 5000, z: -CITY_RING },
+          { x: -18000 + (slot % 4) * 14000, z: -108000 },
+        ]
+      : [
+          { x: CITY_RING, z: lap * 2000 },
+          { x: 90000, z: -25000 + (slot % 4) * 16000 },
+        ];
+    return {
+      x: -108000 + (slot % 3) * 2200,
+      z: -48000 + slot * 13000,
+      points: around.concat(tail),
+    };
+  }
+
+  function spawnDrone(a) {
+    const slot = a.id % 8;
+    const fast = slot % 2 === 1;
+    const route = droneRoute(slot);
+    const first = route.points[0];
+    a.fast = fast;
+    a.pace = fast ? DRONE_FAST : DRONE_SLOW;
+    a.points = route.points;
+    a.leg = 0;
+    a.x = route.x;
+    a.z = route.z;
+    a.h = Math.atan2(first.x - a.x, first.z - a.z);
+    a.agl = fast ? 540 + (slot % 3) * 80 : 230 + (slot % 3) * 55;
+    a.y = elevation(a.x, a.z) + a.agl;
+    a.speed = a.pace;
+    a.alive = true;
+    a.hp = fast ? 64 : 40;
+    a.wait = 0;
+    a.roll = 0;
+    a.gunT = 2;
+    a.mesh.visible = true;
+    a.mesh.scale.setScalar(fast ? 2.05 : 2.45);
+  }
+
   function placeAround(a, origin, i) {
     const drone = a.role === "drone";
     const ang = (i / (drone ? 8 : 5)) * Math.PI * 2 + (drone ? 0.2 : 1.1);
@@ -281,7 +335,7 @@ export function createCombat(scene, fields, elevation, wet = null) {
     a.h = Math.atan2(player.x - a.x, player.z - a.z);
     a.agl = 420 + slot * 220;
     a.y = elevation(a.x, a.z) + a.agl;
-    a.speed = 155;
+    a.speed = BANDIT_SPEED;
     a.alive = true;
     a.hp = 70;
     a.roll = 0;
@@ -294,7 +348,7 @@ export function createCombat(scene, fields, elevation, wet = null) {
     const mesh = droneGroup();
     scene.add(mesh);
     const a = { id: i, mesh, role: "drone", kind: "air", vx: 0, vz: 0, vy: 0 };
-    placeAround(a, home, i);
+    spawnDrone(a);
     craft.push(a);
   }
   for (let i = 0; i < 5; i++) {
@@ -909,12 +963,15 @@ export function createCombat(scene, fields, elevation, wet = null) {
       if (!a.alive) {
         if (a.role === "bandit") continue;
         a.wait -= dt;
-        if (a.wait <= 0) placeAround(a, player, (a.id % 8) + 3);
+        if (a.wait <= 0) {
+          if (a.role === "drone") spawnDrone(a);
+          else placeAround(a, player, (a.id % 8) + 3);
+        }
         continue;
       }
       const far = Math.hypot(a.x - player.x, a.z - player.z);
-      const limit = a.role === "drone" ? 9000 : a.role === "bandit" ? 12000 : 6200;
-      if (far > limit && a.role !== "bandit") placeAround(a, player, a.id % 8);
+      const limit = a.role === "bandit" ? 12000 : 6200;
+      if (far > limit && a.role !== "bandit" && a.role !== "drone") placeAround(a, player, a.id % 8);
       const prevY = a.y;
       if (a.role === "bandit" && player.flying && far < 8000 && far > 70) {
         const slot = a.id % 2;
@@ -932,27 +989,34 @@ export function createCombat(scene, fields, elevation, wet = null) {
         a.roll = Math.max(-0.7, Math.min(0.7, diff / Math.max(dt, 0.001) * 0.12));
         const groundY = elevation(a.x, a.z);
         a.agl = Math.max(180, player.y - groundY + (high ? 260 : 40));
-        a.speed = far > 1800 ? 168 : 128;
+        a.speed = BANDIT_SPEED;
         a.gunT = (a.gunT || 0) - dt;
         const rear = -((a.x - player.x) * Math.sin(player.heading) + (a.z - player.z) * Math.cos(player.heading));
         const flyingHostile = hostile.filter((m) => m.life > 0).length;
         if (rear > 180 && far < 1700 && far > 320 && a.gunT <= 0 && flyingHostile < 2) {
-          if (launchHostile(a)) a.gunT = 9;
+          if (launchHostile(a)) {
+            a.gunT = 9;
+            fx.launch = true;
+          }
         }
       } else if (a.role === "drone") {
-        if (!a.anchor) a.anchor = { x: a.x, z: a.z };
-        const ang = clock * 0.07 + a.id * 1.2;
-        const tx = a.anchor.x + Math.sin(ang) * 1500;
-        const tz = a.anchor.z + Math.cos(ang * 0.85) * 1500;
-        const aim = Math.atan2(tx - a.x, tz - a.z);
-        let diff = wrap(aim - a.h);
-        const maxTurn = 0.7 * dt;
-        if (diff > maxTurn) diff = maxTurn;
-        if (diff < -maxTurn) diff = -maxTurn;
-        a.h = wrap(a.h + diff);
-        a.roll = Math.max(-0.4, Math.min(0.4, diff / Math.max(dt, 0.001) * 0.08));
-        a.agl = 260 + (a.id % 4) * 90;
-        a.speed = 102;
+        const wp = a.points && a.points[a.leg];
+        if (!wp) {
+          a.alive = false;
+          a.wait = 8 + (a.id % 4) * 3;
+          a.mesh.visible = false;
+        } else {
+          const aim = Math.atan2(wp.x - a.x, wp.z - a.z);
+          let diff = wrap(aim - a.h);
+          const maxTurn = (a.fast ? 0.9 : 0.55) * dt;
+          if (diff > maxTurn) diff = maxTurn;
+          if (diff < -maxTurn) diff = -maxTurn;
+          a.h = wrap(a.h + diff);
+          a.roll = Math.max(-0.45, Math.min(0.45, diff / Math.max(dt, 0.001) * 0.08));
+          a.agl = a.fast ? 540 + (a.id % 3) * 80 : 230 + (a.id % 3) * 55;
+          a.speed = a.pace;
+          if (Math.hypot(wp.x - a.x, wp.z - a.z) < 1700) a.leg += 1;
+        }
       } else {
         const farC = Math.hypot(a.x - player.x, a.z - player.z);
         if (farC > 4800) {

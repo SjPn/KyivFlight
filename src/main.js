@@ -1,12 +1,12 @@
 import * as THREE from "three";
-import { createAudio } from "./audio.js?v=31";
-import { loadElev } from "./elev.js?v=49";
-import { clearPlazas, indexCity, nearestRoad, onRoad, openStreets, presentEast } from "./geo.js?v=67";
-import { FIELDS, fieldAt, nearestField, runwayStart } from "./airfields.js?v=1";
-import { createPlayer, resetPlayer, updatePlayer } from "./player.js?v=81";
-import { clearRetry, createSim, nearestSight, retryHint, updateSim } from "./sim.js?v=61";
-import { createUI } from "./ui.js?v=76";
-import { createWorld } from "./world.js?v=93";
+import { createAudio } from "./audio.js?v=33";
+import { readElev } from "./elev.js?v=50";
+import { clearPlazas, indexCity, nearestRoad, onRoad, openStreets, presentEast } from "./geo.js?v=68";
+import { FIELDS, fieldAt, nearestField, runwayStart } from "./airfields.js?v=2";
+import { createPlayer, resetPlayer, updatePlayer } from "./player.js?v=85";
+import { clearRetry, createSim, nearestSight, retryHint, updateSim } from "./sim.js?v=62";
+import { createUI } from "./ui.js?v=80";
+import { createWorld } from "./world.js?v=100";
 
 const app = document.querySelector("#app");
 const loading = document.querySelector("#loading");
@@ -15,8 +15,66 @@ const loadBar = loading.querySelector("i");
 
 function setLoad(text, t) {
   loadMsg.textContent = text;
-  loadBar.style.transform = `scaleX(${t})`;
+  loadBar.style.transform = `scaleX(${Math.max(0.02, Math.min(1, t))})`;
 }
+
+function bootClock() {
+  const t0 = performance.now();
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem("kievride-boot") || "null"); } catch { saved = null; }
+  const weights = saved && saved.world > 0 ? saved : { fetch: 6, read: 4, streets: 12, index: 8, world: 14 };
+  const order = ["fetch", "read", "streets", "index", "world"];
+  const prog = { fetch: 0, read: 0, streets: 0, index: 0, world: 0 };
+  const sum = order.reduce((s, id) => s + (weights[id] || 1), 0);
+  function show() {
+    const done = order.reduce((s, id) => s + (weights[id] || 1) * prog[id], 0);
+    const p = done / sum;
+    const elapsed = performance.now() - t0;
+    const left = p > 0.03 ? (elapsed * (1 - p)) / p : 12000;
+    const secs = Math.max(0, Math.ceil(left / 1000));
+    setLoad(secs > 0 ? `${secs} s` : "A moment…", Math.max(0.02, Math.min(0.99, p)));
+  }
+  return {
+    set(id, value) {
+      prog[id] = Math.max(0, Math.min(1, value));
+      show();
+    },
+    finish(measured) {
+      try { localStorage.setItem("kievride-boot", JSON.stringify(measured)); } catch { /* keep the last good timing */ }
+      setLoad("Ready to fly", 1);
+    },
+  };
+}
+
+async function fetchCounted(url, onBytes, missing) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(missing);
+  const total = Number(res.headers.get("content-length")) || 0;
+  if (!res.body || !res.body.getReader) {
+    const buf = new Uint8Array(await res.arrayBuffer());
+    onBytes(buf.byteLength, total || buf.byteLength);
+    return buf;
+  }
+  const reader = res.body.getReader();
+  const parts = [];
+  let got = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parts.push(value);
+    got += value.byteLength;
+    onBytes(got, total || got);
+  }
+  const out = new Uint8Array(got);
+  let off = 0;
+  for (const part of parts) {
+    out.set(part, off);
+    off += part.byteLength;
+  }
+  return out;
+}
+
+const yieldPaint = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 const SIGHT_EN = {
   maidan: ["Independence Square", "Kyiv's main square and the Independence Column"],
@@ -105,10 +163,15 @@ let camFov = 68;
 let viewDist = 16;
 
 window.addEventListener("keydown", (e) => {
+  const chord = (e.ctrlKey || e.metaKey) && (e.code === "KeyW" || e.key === "w" || e.key === "W");
+  if (chord) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
   if (e.repeat) return;
   keys.add(e.code);
-    if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyW", "KeyA", "KeyS", "KeyD", "KeyC", "KeyF", "KeyG", "AltLeft", "AltRight", "ControlLeft", "ControlRight", "CapsLock"].includes(e.code)) e.preventDefault();
-});
+  if (chord || ["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Equal", "Minus", "NumpadAdd", "NumpadSubtract", "KeyW", "KeyA", "KeyS", "KeyD", "KeyC", "KeyF", "KeyG", "AltLeft", "AltRight", "ControlLeft", "ControlRight", "CapsLock"].includes(e.code)) e.preventDefault();
+}, true);
 window.addEventListener("keyup", (e) => keys.delete(e.code));
 window.addEventListener("blur", () => keys.clear());
 
@@ -127,14 +190,16 @@ function steerTo(h, target) {
   return d;
 }
 
-function readInput(player) {
+function readInput(player, mapOpen = false) {
   const pads = navigator.getGamepads?.() || [];
   const gp = pads[0];
   const ax = gp ? gp.axes[0] || 0 : 0;
+  const thrustUp = keys.has("NumpadAdd") || keys.has("Equal") || (!mapOpen && keys.has("ArrowUp"));
+  const thrustDown = keys.has("NumpadSubtract") || keys.has("Minus") || (!mapOpen && keys.has("ArrowDown"));
   if (player.flight) {
     return {
-      accel: keys.has("ShiftLeft") || keys.has("ShiftRight") || (gp?.buttons[7]?.value > 0.15),
-      decel: keys.has("ControlLeft") || keys.has("ControlRight") || (gp?.buttons[6]?.value > 0.15),
+      accel: thrustUp || (gp?.buttons[7]?.value > 0.15),
+      decel: thrustDown || (gp?.buttons[6]?.value > 0.15),
       left: keys.has("KeyA") || ax < -0.2,
       right: keys.has("KeyD") || ax > 0.2,
       noseUp: keys.has("KeyS") || !!gp?.buttons[3]?.pressed,
@@ -177,7 +242,8 @@ function projectPin(camera, pin, player, width, height) {
 }
 
 async function boot() {
-  setLoad("Starting the renderer…", 0.08);
+  const clock = bootClock();
+  clock.set("fetch", 0.01);
   const renderer = new THREE.WebGLRenderer({
     antialias: true,
     alpha: false,
@@ -202,27 +268,50 @@ async function boot() {
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
 
-  setLoad("Building Kyiv…", 0.22);
-  const [res] = await Promise.all([
-    fetch("/data/kyiv.json?v=49"),
-    loadElev("/data/elev.bin?v=49"),
+  const got = { map: 0, elev: 0 };
+  const totals = { map: 0, elev: 0 };
+  const noteFetch = () => {
+    const all = (totals.map || got.map) + (totals.elev || got.elev);
+    const have = got.map + got.elev;
+    clock.set("fetch", all ? have / all : 0.01);
+  };
+  const tFetch = performance.now();
+  const [mapBytes, elevBytes] = await Promise.all([
+    fetchCounted("/data/kyiv.json?v=49", (n, t) => { got.map = n; totals.map = t; noteFetch(); }, "Map missing. Run npm run map"),
+    fetchCounted("/data/elev.bin?v=49", (n, t) => { got.elev = n; totals.elev = t; noteFetch(); }, "Elevation grid missing"),
   ]);
-  if (!res.ok) throw new Error("Map missing. Run npm run map");
-  const city = await res.json();
+  clock.set("fetch", 1);
+  await yieldPaint();
+  const tRead = performance.now();
+  const city = JSON.parse(new TextDecoder().decode(mapBytes));
+  readElev(elevBytes.buffer);
   if (!city.roads?.length) throw new Error("The map is empty");
+  clock.set("read", 1);
+  await yieldPaint();
+  const tStreets = performance.now();
   presentEast(city);
-  setLoad("Clearing the streets…", 0.45);
   openStreets(city);
   clearPlazas(city);
   applyEnglish(city);
-  setLoad("Compiling shaders…", 0.62);
+  clock.set("streets", 1);
+  await yieldPaint();
+  const tIndex = performance.now();
   const index = indexCity(city);
+  clock.set("index", 1);
+  await yieldPaint();
+  const tWorld = performance.now();
   // Driving is switched off. The street mesh stays so the city reads from the air.
   const flight = true;
   city.flight = true;
   city.fields = FIELDS;
-  setLoad("Preparing the runways…", 0.72);
   const world = createWorld(city, index, flight);
+  const bootMeasured = {
+    fetch: Math.max(1, tRead - tFetch),
+    read: Math.max(1, tStreets - tRead),
+    streets: Math.max(1, tIndex - tStreets),
+    index: Math.max(1, tWorld - tIndex),
+    world: Math.max(1, performance.now() - tWorld),
+  };
   const homeField = FIELDS.find((f) => f.icao === "UKKK") || FIELDS[0];
   const spot = flight ? runwayStart(homeField) : city.spawn;
   const player = createPlayer(spot);
@@ -242,9 +331,21 @@ async function boot() {
     player.y = world.surface(next.x, next.z, player.y) + 0.45;
   };
 
+  const holdFlightKeys = async () => {
+    renderer.domElement.requestPointerLock?.();
+    try {
+      if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
+      await navigator.keyboard?.lock?.();
+    } catch {
+      // Without fullscreen the browser still treats Ctrl+W as "close tab".
+    }
+  };
+  document.addEventListener("fullscreenchange", () => {
+    if (!document.fullscreenElement) navigator.keyboard?.unlock?.();
+  });
   renderer.domElement.addEventListener("click", () => {
     audio.unlock();
-    if (!ui.mapOpen) renderer.domElement.requestPointerLock?.();
+    if (!ui.mapOpen) holdFlightKeys();
   });
   window.addEventListener("mousemove", (e) => {
     if (document.pointerLockElement !== renderer.domElement) return;
@@ -334,6 +435,16 @@ async function boot() {
   let wasWreck = false;
   let wasSpin = false;
   let stallT = 0;
+  let pullT = 0;
+  const altSaid = new Set();
+  const altGates = [
+    [500, "Five hundred."],
+    [200, "Two hundred."],
+    [100, "One hundred."],
+    [50, "Fifty."],
+    [30, "Thirty."],
+    [15, "Fifteen."],
+  ];
   let warnT = 0;
   sim.kills = sim.kills || 0;
   sim.tags = [];
@@ -342,7 +453,7 @@ async function boot() {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     const paused = ui.paused;
-    const input = readInput(player);
+    const input = readInput(player, ui.mapOpen);
     if (ui.mapOpen) {
       if (keys.has("ArrowLeft") || keys.has("KeyA")) ui.nudgeMap(-18, 0);
       if (keys.has("ArrowRight") || keys.has("KeyD")) ui.nudgeMap(18, 0);
@@ -358,13 +469,37 @@ async function boot() {
       if (fx.boom) audio.boom();
       if (player.lock && !hadLock) audio.lock();
       hadLock = !!player.lock;
-      if (player.stallWarn) {
+      if (player.stallWarn || player.stalling) {
         stallT -= dt;
         if (stallT <= 0) {
-          audio.stall();
-          stallT = 0.42;
+          audio.callout("Stall. Stall.", 2);
+          stallT = player.stalling ? 1.05 : 1.4;
         }
       } else stallT = 0;
+      if (player.flying && !player.wrecked) {
+        const agl = player.agl ?? 9999;
+        if ((player.vy || 0) < -1) {
+          let due = null;
+          for (const [gate, phrase] of altGates) {
+            if (agl <= gate && !altSaid.has(gate)) due = [gate, phrase];
+          }
+          if (due && audio.callout(due[1], 1)) {
+            for (const [gate] of altGates) if (gate >= due[0]) altSaid.add(gate);
+          }
+        }
+        for (const [gate] of altGates) {
+          if (agl > gate + 35) altSaid.delete(gate);
+        }
+        const overPad = fieldAt(city.fields, player.x, player.z);
+        if (!overPad && agl < 160 && player.vy < -14) {
+          pullT -= dt;
+          if (pullT <= 0) {
+            audio.callout("Pull up. Pull up.", 4);
+            pullT = 2.4;
+          }
+        } else pullT = 0;
+      }
+      if (fx.launch) audio.callout("Missile. Missile.", 4);
       const missileNear = player.missileDist;
       const missileClose = missileNear != null && missileNear < 240 && player.flying && !player.wrecked;
       if (missileClose) {
@@ -387,7 +522,7 @@ async function boot() {
         } else warnT = 0;
       }
       if (player.spin && !wasSpin) {
-        sim.toast = "Stall · spin — add power";
+        sim.toast = "Spin — add power";
         sim.toastT = 1.8;
       }
       wasSpin = !!player.spin;
@@ -434,7 +569,7 @@ async function boot() {
       for (const tag of sim.tags) tag.life -= dt;
       sim.tags = sim.tags.filter((tag) => tag.life > 0);
       if (player.shake > 0) player.shake = Math.max(0, player.shake - dt);
-      audio.setDrive(player.speed, player.jets, true);
+      audio.setDrive(player.speed, player.jets, true, player.throttle || 0);
     } else audio.threat(false);
     world.sync(player, sim, dt);
 
@@ -545,7 +680,7 @@ async function boot() {
     requestAnimationFrame(frame);
   };
 
-  setLoad("Ready to fly", 1);
+  clock.finish(bootMeasured);
   loading.classList.add("done");
   frame(performance.now());
 }

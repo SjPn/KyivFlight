@@ -7,6 +7,26 @@ export function createAudio() {
   let roarGain = null;
   let whineGain = null;
   let master = null;
+  let blade = null;
+  let bladeGain = null;
+  let quietUntil = 0;
+  let quietPri = 0;
+  let cabinVoice = null;
+  let callToken = 0;
+
+  function pickVoice() {
+    if (typeof speechSynthesis === "undefined") return null;
+    const voices = speechSynthesis.getVoices?.() || [];
+    cabinVoice = voices.find((v) => /en-US/i.test(v.lang) && /zira|samantha|google uk english female|google us english/i.test(v.name))
+      || voices.find((v) => /en-GB|en-US/i.test(v.lang) && /female/i.test(v.name))
+      || voices.find((v) => /^en/i.test(v.lang))
+      || cabinVoice;
+    return cabinVoice;
+  }
+  if (typeof speechSynthesis !== "undefined") {
+    pickVoice();
+    speechSynthesis.addEventListener?.("voiceschanged", pickVoice);
+  }
   let threatOsc = null;
   let threatGain = null;
 
@@ -60,6 +80,15 @@ export function createAudio() {
     rumble.connect(engineGain);
     engine.start();
 
+    blade = ctx.createOscillator();
+    blade.type = "triangle";
+    blade.frequency.value = 180;
+    bladeGain = ctx.createGain();
+    bladeGain.gain.value = 0;
+    blade.connect(bladeGain);
+    bladeGain.connect(engineGain);
+    blade.start();
+
     engineGain.connect(master);
   }
 
@@ -84,21 +113,26 @@ export function createAudio() {
       ensure();
       ctx.resume();
     },
-    setDrive(speed, jets, flying) {
+    setDrive(speed, jets, flying, throttle = 0) {
       if (!ctx) return;
       const kmh = Math.abs(speed) * 3.6;
+      const thr = Math.max(0, Math.min(1, throttle || 0));
       const burn = !!jets;
-      const air = flying || kmh > 40;
+      const air = flying || kmh > 35;
+      const spool = 0.28 + thr * 0.72;
       const now = ctx.currentTime;
-      const roarF = (burn ? 640 : air ? 260 : 150) + Math.min(380, kmh * 0.12);
-      const whineF = Math.min(burn ? 2400 : 860, (air ? 240 : 150) + kmh * (burn ? 0.85 : 0.32));
-      roarFilter.frequency.setTargetAtTime(roarF, now, 0.1);
-      whineFilter.frequency.setTargetAtTime(Math.max(80, whineF), now, 0.08);
-      whineFilter.Q.setTargetAtTime(burn ? 8 : 3.6, now, 0.12);
-      engine.frequency.setTargetAtTime(Math.min(burn ? 110 : 78, 42 + kmh * 0.035), now, 0.12);
-      roarGain.gain.setTargetAtTime(burn ? 1 : 0.62, now, 0.1);
-      whineGain.gain.setTargetAtTime(burn ? 0.7 : air ? 0.28 : 0.12, now, 0.1);
-      const vol = Math.min(0.42, (air ? 0.08 : 0.05) + Math.min(kmh, 2400) / 7800 + (burn ? 0.12 : 0));
+      const roarF = 160 + Math.min(640, kmh * 0.28) + spool * 50;
+      const whineF = (burn ? 900 : 420) + spool * (burn ? 1100 : 520) + Math.min(burn ? 1400 : 360, kmh * (burn ? 0.4 : 0.14));
+      const bladeF = (burn ? 240 : 120) + spool * (burn ? 280 : 150) + Math.min(burn ? 420 : 160, kmh * 0.08);
+      roarFilter.frequency.setTargetAtTime(roarF, now, 0.12);
+      whineFilter.frequency.setTargetAtTime(Math.max(140, whineF), now, 0.08);
+      whineFilter.Q.setTargetAtTime(burn ? 6.5 : 4.2, now, 0.12);
+      engine.frequency.setTargetAtTime(62 + spool * 28 + Math.min(36, kmh * 0.012), now, 0.1);
+      blade.frequency.setTargetAtTime(bladeF, now, 0.08);
+      roarGain.gain.setTargetAtTime(air ? 0.28 + Math.min(0.38, kmh / 1100) : 0.1 + thr * 0.12, now, 0.1);
+      whineGain.gain.setTargetAtTime((air ? 0.1 : 0.04) + spool * (burn ? 0.42 : 0.24), now, 0.08);
+      bladeGain.gain.setTargetAtTime(thr > 0.04 || air ? 0.16 + spool * 0.28 : 0.02, now, 0.1);
+      const vol = Math.min(0.4, 0.045 + spool * 0.09 + Math.min(kmh, 1800) / 11000 + (burn ? 0.06 : 0));
       engineGain.gain.setTargetAtTime(vol, now, 0.08);
     },
     shot(missile) {
@@ -254,6 +288,28 @@ export function createAudio() {
         o.start(t);
         o.stop(t + 0.07);
       }
+    },
+    callout(text, priority = 0) {
+      if (typeof speechSynthesis === "undefined" || !text) return false;
+      const now = performance.now();
+      if (now < quietUntil && priority < quietPri) return false;
+      quietPri = priority;
+      quietUntil = now + 1050;
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = "en-US";
+      utter.rate = 1.05;
+      utter.pitch = 0.82;
+      utter.volume = 1;
+      const voice = pickVoice();
+      if (voice) utter.voice = voice;
+      const mine = ++callToken;
+      speechSynthesis.cancel();
+      setTimeout(() => {
+        if (mine !== callToken) return;
+        if (speechSynthesis.paused) speechSynthesis.resume();
+        speechSynthesis.speak(utter);
+      }, 50);
+      return true;
     },
     horn() {
       ensure();

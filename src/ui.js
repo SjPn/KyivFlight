@@ -1,4 +1,4 @@
-import { cellsAround } from "./geo.js?v=67";
+import { cellsAround } from "./geo.js?v=68";
 
 function showRoad(cls, mpp) {
   if (cls === "motorway" || cls === "trunk" || cls === "primary") return true;
@@ -142,8 +142,8 @@ export function createUI(city, index) {
       <h4>CONTROLS</h4>
       <div class="cols">
         <section><h5>Takeoff</h5>
-          ${row(kbd("Shift"), "add thrust — it stays when you release")}
-          ${row(kbd("Ctrl"), "reduce thrust")}
+          ${row(kbd("+"), "add thrust — Up does the same, and it stays when you release")}
+          ${row(kbd("−"), "reduce thrust — Down does the same")}
           ${row(kbd("F"), "flaps: landing or combat")}
           ${row(kbd("G"), "gear up / gear down")}
           ${row(kbd("S"), "rotate once you are above stall")}
@@ -155,7 +155,7 @@ export function createUI(city, index) {
           ${row(kbd("S") + kbd("W"), "nose up / down — hold through a loop")}
           ${row(kbd("Caps"), "wings fold back, jet to 2400 km/h")}
           ${row("", "landing flaps lift off near 75 km/h, stall at 60")}
-          ${row("", "combat flaps stall at 130 km/h and spin")}
+          ${row("", "below stall the nose drops. Stay slow for three seconds and it spins")}
           ${row("", "a climb bleeds speed, a dive builds it")}
           ${row("", "the landing bar must stay left of the white mark")}
           ${row("", "flare with S, gear down, then touch the runway")}
@@ -192,7 +192,7 @@ export function createUI(city, index) {
           ${row(kbd("T"), "time of day: morning / day / evening")}
         </section>
       </div>
-      <p class="botline">F sets landing flaps for a short takeoff. G raises the gear once you are flying. Drop below stall speed and the nose falls into a spin — add power to recover. Shoot the red drones.</p>
+      <p class="botline">F sets landing flaps for a short takeoff. G raises the gear once you are flying. Below stall speed the nose drops and the aircraft sinks. Add power within three seconds or it departs into a spin. Shoot the red drones.</p>
     </div>
     <aside class="place off"><div class="ic">✦</div><div><b></b><small></small><p></p></div></aside>
     <div class="bigmap off">
@@ -737,16 +737,18 @@ export function createUI(city, index) {
       fly.textContent = player.wrecked
         ? "Destroyed"
         : player.spin
-        ? "Stall · spin"
-        : player.stallWarn
+        ? "Spin — add power"
+        : player.stalling
+          ? "Stall — nose down"
+          : player.stallWarn
           ? "Stall warning"
           : player.flying
           ? (player.gearDown === false ? "Gear up · " : "") + (player.jets ? "Jet · " : "Airborne · ") + Math.round(player.vy) + " m/s"
           : kmh > vr
             ? "S · rotate"
             : player.flaps > 0.5
-              ? "Flaps · Shift · takeoff"
-              : "Shift · takeoff";
+              ? "Flaps · + · takeoff"
+              : "+ · takeoff";
       const weapon = $(".weapon");
       if (weapon) {
         const flr = "FLR " + (player.flares ?? 0);

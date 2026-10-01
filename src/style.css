@@ -23,7 +23,7 @@ html, body {
 #loading .title { font-size: 34px; font-weight: 700; letter-spacing: .04em; }
 #loading .msg { min-height: 1.4em; opacity: .75; }
 #loading .bar { width: 220px; height: 3px; margin: 0 auto; background: #ffffff1a; border-radius: 2px; overflow: hidden; }
-#loading .bar i { display: block; height: 100%; width: 100%; background: #f2c14e; transform: scaleX(.04); transform-origin: left; transition: transform .3s; }
+#loading .bar i { display: block; height: 100%; width: 100%; background: #f2c14e; transform: scaleX(.04); transform-origin: left; transition: transform .12s linear; }
 #loading .modes { display: flex; gap: 12px; justify-content: center; }
 #loading .modes button {
   border: 0;
