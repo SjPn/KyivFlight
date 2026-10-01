@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { heightAt } from "./elev.js?v=50";
 import { buildingContact, cellsAround, nearestRoad, onRoad, roadDeck, waterAt } from "./geo.js?v=68";
 import { fieldAt } from "./airfields.js?v=2";
-import { createCombat } from "./combat.js?v=16";
+import { createCombat } from "./combat.js?v=17";
 
 const CLASS_COLOR = {
   motorway: [1, 1, 1],
@@ -224,6 +224,7 @@ function makeRoads(city, index, flight) {
     if (!pad || r > pad.r) pads.set(k, { x, z, y, r });
   };
   for (const road of city.roads) {
+    if (flight && road.c === "track") continue;
     const col = CLASS_COLOR[road.c] || CLASS_COLOR.residential;
     const p = road.p;
     if (!p || p.length < 4) continue;
@@ -311,7 +312,7 @@ function makeRoads(city, index, flight) {
       const u0 = dist / 6, u1 = (dist + L) / 6;
       uvs.push(u0, 0, u1, 0, u1, 1, u0, 0, u1, 1, u0, 1);
       const marked = road.c === "motorway" || road.c === "trunk" || road.c === "primary" || road.c === "secondary";
-      if (marked) {
+      if (marked && !flight) {
         for (let t = 2.2; t < L - 1; t += 8) {
           const a = t;
           const b = Math.min(L - 0.4, t + 2.5);
@@ -1712,11 +1713,26 @@ export function createWorld(city, index, flight = false) {
   ground.material.polygonOffsetUnits = 2;
   ground.receiveShadow = true;
   ground.frustumCulled = false;
-  const landTint = (h, i) => {
-    const t = Math.max(0, Math.min(1, (h - 95) / 90));
-    groundCol[i] = 0.16 + t * 0.16;
-    groundCol[i + 1] = 0.32 + t * 0.08;
-    groundCol[i + 2] = 0.2 - t * 0.04;
+  const landTint = (h, i, x, z) => {
+    const elev = Math.max(0, Math.min(1, (h - 88) / 70));
+    const fx = Math.floor(x / 380 + z * 0.00015);
+    const fz = Math.floor(z / 460 - x * 0.00012);
+    const n = Math.sin(fx * 127.1 + fz * 311.7) * 43758.5453;
+    const pick = n - Math.floor(n);
+    const fields = [
+      [0.22, 0.48, 0.16],
+      [0.58, 0.5, 0.18],
+      [0.34, 0.56, 0.2],
+      [0.12, 0.28, 0.1],
+      [0.46, 0.36, 0.16],
+      [0.28, 0.42, 0.14],
+    ];
+    const tone = fields[Math.floor(pick * fields.length)];
+    const damp = Math.max(0, 0.4 - elev);
+    const high = elev * 0.06;
+    groundCol[i] = tone[0] + high - damp * 0.04;
+    groundCol[i + 1] = tone[1] - high * 0.4 - damp * 0.03;
+    groundCol[i + 2] = tone[2] + damp * 0.04;
   };
   const groundRaw = new Float32Array((groundSeg + 1) * (groundSeg + 1));
   const reshapeGround = (cx, cz, span) => {
@@ -1744,7 +1760,7 @@ export function createWorld(city, index, flight = false) {
         if (iz + 1 < n) low = Math.min(low, groundRaw[(iz + 1) * n + ix]);
         const v = (iz * n + ix) * 3;
         groundPos[v + 1] = Math.min(h, (h * 2 + low) / 3) - 0.3;
-        landTint(h, v);
+        landTint(h, v, groundPos[v], groundPos[v + 2]);
         if (waterAt(index, groundPos[v], groundPos[v + 2])) {
           groundPos[v + 1] = Math.min(groundPos[v + 1], h - 1.8);
           groundCol[v] = 0.05;

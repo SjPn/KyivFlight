@@ -6,7 +6,7 @@ import { FIELDS, fieldAt, nearestField, runwayStart } from "./airfields.js?v=2";
 import { createPlayer, resetPlayer, updatePlayer } from "./player.js?v=85";
 import { clearRetry, createSim, nearestSight, retryHint, updateSim } from "./sim.js?v=62";
 import { createUI } from "./ui.js?v=80";
-import { createWorld } from "./world.js?v=100";
+import { createWorld } from "./world.js?v=103";
 
 const app = document.querySelector("#app");
 const loading = document.querySelector("#loading");
