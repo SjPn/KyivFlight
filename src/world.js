@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { heightAt } from "./elev.js?v=49";
 import { buildingContact, cellsAround, nearestRoad, onRoad, roadDeck, waterAt } from "./geo.js?v=67";
 import { fieldAt } from "./airfields.js?v=1";
-import { createCombat } from "./combat.js?v=13";
+import { createCombat } from "./combat.js?v=14";
 
 const CLASS_COLOR = {
   motorway: [1, 1, 1],

@@ -123,9 +123,10 @@ export function createUI(city, index) {
     </div>
     <div class="speed"><div class="street"></div><div class="v">0</div><div class="u">KM/H</div></div>
     <div class="radar">
-      <div class="cap"><span>RADAR</span><div class="weapon">GUN</div><em>15 KM</em></div>
+      <div class="weapon">GUN</div>
+      <div class="cap"><span>RADAR</span><em>15 KM</em></div>
       <canvas class="scope" width="180" height="180"></canvas>
-      <div class="keyline"><i class="g"></i>Civil<i class="r"></i>Drones<b class="score">0 down</b></div>
+      <div class="keyline"><i class="g"></i>Civil<i class="r"></i>Drones<i class="b"></i>Enemy<b class="score">0 down</b></div>
     </div>
     <div class="crosshair"></div>
     <div class="lead off"></div>
@@ -169,7 +170,8 @@ export function createUI(city, index) {
           ${row("", "missiles lock the nearest drone within 15 km")}
           ${row("", "the beep speeds up, then holds when a missile is close")}
           ${row("", "a hard turn breaks a missile; flares pull it off")}
-          ${row("", "green radar blips are civil, red are drones")}
+          ${row("", "green blips are civil, red are drones, orange are enemy jets")}
+          ${row("", "drones roam. A pair of enemy jets arrives every four minutes")}
           ${row("", "shoot the drones — they break apart and fall")}
         </section>
         <section><h5>Camera</h5>
@@ -368,17 +370,27 @@ export function createUI(city, index) {
     let hostile = 0;
     for (const a of sim.craft || []) {
       if (!a.alive) continue;
-      if (a.role === "drone") hostile++;
+      if (a.role === "drone" || a.role === "bandit") hostile++;
       const dx = a.x - player.x;
       const dz = a.z - player.z;
       const fwd = dx * Math.sin(hdg) + dz * Math.cos(hdg);
-      const right = dx * Math.cos(hdg) - dz * Math.sin(hdg);
+      const right = dz * Math.sin(hdg) - dx * Math.cos(hdg);
       const dist = Math.hypot(fwd, right);
       if (dist > range || dist < 1) continue;
       const px = cx + (right / range) * (R - 6);
       const py = cy - (fwd / range) * (R - 6);
-      const locked = player.lockPos && a.role === "drone" && Math.hypot(a.x - player.lockPos.x, a.z - player.lockPos.z) < 40;
-      if (a.role === "drone") {
+      const locked = player.lockPos && (a.role === "drone" || a.role === "bandit") && Math.hypot(a.x - player.lockPos.x, a.z - player.lockPos.z) < 40;
+      if (a.role === "bandit") {
+        sctx.fillStyle = "#ff9a1a";
+        sctx.fillRect(px - 4, py - 4, 8, 8);
+        if (locked) {
+          sctx.strokeStyle = "#ff9a1a";
+          sctx.lineWidth = 1.5;
+          sctx.beginPath();
+          sctx.arc(px, py, 8, 0, Math.PI * 2);
+          sctx.stroke();
+        }
+      } else if (a.role === "drone") {
         sctx.fillStyle = "#ff3b30";
         sctx.beginPath();
         sctx.moveTo(px, py - 5);
@@ -550,7 +562,7 @@ export function createUI(city, index) {
     if (sim.craft) {
       for (const a of sim.craft) {
         if (!a.alive) continue;
-        bctx.fillStyle = a.role === "drone" ? "#ff3b30" : "#3dde6a";
+        bctx.fillStyle = a.role === "bandit" ? "#ff9a1a" : a.role === "drone" ? "#ff3b30" : "#3dde6a";
         bctx.beginPath();
         bctx.arc(toX(a.x), toY(a.z), a.role === "drone" ? 4 : 3.2, 0, Math.PI * 2);
         bctx.fill();
@@ -674,7 +686,7 @@ export function createUI(city, index) {
         panel.querySelector(".bar i").style.width = Math.round(sim.objective.bar * 100) + "%";
         const tm = panel.querySelector(".tm");
         tm.textContent = sim.objective.dist == null
-          ? "MSL " + (player.missiles ?? 0)
+          ? ""
           : sim.objective.time == null
             ? (sim.objective.dist > 1000 ? (sim.objective.dist / 1000).toFixed(1) + " km" : Math.round(sim.objective.dist) + " m")
             : Math.max(0, Math.ceil(sim.objective.time)) + " s";
@@ -738,7 +750,8 @@ export function createUI(city, index) {
       const weapon = $(".weapon");
       if (weapon) {
         const flr = "FLR " + (player.flares ?? 0);
-        weapon.textContent = (player.weapon ? "MSL " + (player.missiles ?? 0) : "GUN " + (player.rounds ?? 0)) + " · " + flr;
+        weapon.textContent = (player.weapon ? "MSL " + (player.missiles ?? 0) : "GUN " + (player.rounds ?? 0)) + "  ·  " + flr;
+        weapon.classList.toggle("msl", !!player.weapon);
         weapon.classList.toggle("lock", !!player.lock);
       }
       const cross = $(".crosshair");

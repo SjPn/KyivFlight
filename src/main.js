@@ -5,8 +5,8 @@ import { clearPlazas, indexCity, nearestRoad, onRoad, openStreets, presentEast }
 import { FIELDS, fieldAt, nearestField, runwayStart } from "./airfields.js?v=1";
 import { createPlayer, resetPlayer, updatePlayer } from "./player.js?v=81";
 import { clearRetry, createSim, nearestSight, retryHint, updateSim } from "./sim.js?v=61";
-import { createUI } from "./ui.js?v=75";
-import { createWorld } from "./world.js?v=92";
+import { createUI } from "./ui.js?v=76";
+import { createWorld } from "./world.js?v=93";
 
 const app = document.querySelector("#app");
 const loading = document.querySelector("#loading");
@@ -283,8 +283,6 @@ async function boot() {
     if (e.code === "AltLeft" || e.code === "AltRight") {
       e.preventDefault();
       player.weapon = player.weapon ? 0 : 1;
-      sim.toast = player.weapon ? "Missiles" : "Machine gun";
-      sim.toastT = 1.4;
     }
     if (e.code === "KeyG" && player.flight) {
       e.preventDefault();
@@ -396,8 +394,12 @@ async function boot() {
       if (fx.kills) {
         sim.kills += fx.kills;
         sim.sortieGot = (sim.sortieGot || 0) + fx.kills;
-        sim.toast = fx.kills > 1 ? fx.kills + " drones down" : "Drone down";
+        sim.toast = fx.banditKills ? (fx.banditKills > 1 ? fx.banditKills + " enemy down" : "Enemy down") : (fx.kills > 1 ? fx.kills + " drones down" : "Drone down");
         sim.toastT = 1.6;
+      }
+      if (fx.raid) {
+        sim.toast = "Enemy aircraft · " + fx.raid;
+        sim.toastT = 2.2;
       }
       if (fx.empty) {
         sim.toast = "Missiles empty · land to rearm";
