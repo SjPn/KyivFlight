@@ -1,4 +1,9 @@
 export function isPhone() {
+  const ua = navigator.userAgent || "";
+  if (/Windows NT|CrOS|X11/.test(ua)) {
+    document.documentElement.classList.remove("mobile");
+    return false;
+  }
   return document.documentElement.classList.contains("mobile");
 }
 

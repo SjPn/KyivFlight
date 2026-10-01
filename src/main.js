@@ -6,7 +6,7 @@ import { decodeCity } from "./mapio.js?v=1";
 import { FIELDS, fieldAt, nearestField, runwayStart } from "./airfields.js?v=2";
 import { createPlayer, resetPlayer, updatePlayer } from "./player.js?v=88";
 import { armSortie, clearRetry, createSim, nearestSight, pickSortie, restartSortie, retryHint, updateSim } from "./sim.js?v=65";
-import { isPhone, mountTouch } from "./touch.js?v=2";
+import { isPhone, mountTouch } from "./touch.js?v=3";
 import { createUI } from "./ui.js?v=92";
 import { createWorld } from "./world.js?v=116";
 

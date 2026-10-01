@@ -7,9 +7,9 @@
   <script>
     (function () {
       var ua = navigator.userAgent || "";
-      var ipad = (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1) || /iPad/.test(ua);
-      var coarse = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
-      if (ipad || /Android|iPhone|iPod/.test(ua) || coarse) document.documentElement.classList.add("mobile");
+      if (/Windows NT|CrOS|X11/.test(ua)) return;
+      var ipad = /iPad/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      if (ipad || /Android|iPhone|iPod/.test(ua)) document.documentElement.classList.add("mobile");
     })();
   </script>
   <meta name="description" content="Fly around Kyiv and Kyiv Oblast. Airfields, traffic in the sky, and a jet that fights.">
@@ -139,6 +139,6 @@
       </div>
     </div>
   </div>
-  <script type="module" src="/src/main.js?v=152"></script>
+  <script type="module" src="/src/main.js?v=153"></script>
 </body>
 </html>
