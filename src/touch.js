@@ -1,10 +1,17 @@
 export function isPhone() {
   const ua = navigator.userAgent || "";
-  if (/Windows NT|CrOS|X11/.test(ua)) {
+  const plat = navigator.platform || "";
+  const brand = navigator.userAgentData?.platform || "";
+  const desktop = /Windows/i.test(brand) || /Win/.test(plat) || /Windows NT|CrOS|X11/.test(ua)
+    || ((/Chrome OS|Chromium OS/i.test(brand) || brand === "Linux") && !/Android/.test(ua));
+  if (desktop) {
     document.documentElement.classList.remove("mobile");
     return false;
   }
-  return document.documentElement.classList.contains("mobile");
+  const ipad = /iPad/.test(ua) || (/Mac/.test(plat) && navigator.maxTouchPoints > 1);
+  const phone = ipad || /Android|iPhone|iPod/.test(ua);
+  document.documentElement.classList.toggle("mobile", phone);
+  return phone;
 }
 
 const DZ = 0.25;

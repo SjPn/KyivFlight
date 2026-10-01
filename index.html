@@ -7,8 +7,11 @@
   <script>
     (function () {
       var ua = navigator.userAgent || "";
-      if (/Windows NT|CrOS|X11/.test(ua)) return;
-      var ipad = /iPad/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      var plat = navigator.platform || "";
+      var brand = (navigator.userAgentData && navigator.userAgentData.platform) || "";
+      if (/Windows/i.test(brand) || /Win/.test(plat) || /Windows NT|CrOS|X11/.test(ua)) return;
+      if ((/Chrome OS|Chromium OS/i.test(brand) || brand === "Linux") && !/Android/.test(ua)) return;
+      var ipad = /iPad/.test(ua) || (/Mac/.test(plat) && navigator.maxTouchPoints > 1);
       if (ipad || /Android|iPhone|iPod/.test(ua)) document.documentElement.classList.add("mobile");
     })();
   </script>
@@ -139,6 +142,6 @@
       </div>
     </div>
   </div>
-  <script type="module" src="/src/main.js?v=154"></script>
+  <script type="module" src="/src/main.js?v=155"></script>
 </body>
 </html>
