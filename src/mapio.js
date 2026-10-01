@@ -109,10 +109,75 @@ function unique(items) {
   return out;
 }
 
+const EMPTY = -2147483648;
+
+function mixCell(ix, iz) {
+  return (Math.imul(ix, 73856093) ^ Math.imul(iz, 19349663)) >>> 0;
+}
+
+function cellAt(grid, ix, iz) {
+  let h = mixCell(ix, iz) & grid.mask;
+  const keysX = grid.keysX;
+  const keysZ = grid.keysZ;
+  while (keysX[h] !== EMPTY) {
+    if (keysX[h] === ix && keysZ[h] === iz) {
+      const start = grid.start[h];
+      const count = grid.count[h];
+      const out = new Array(count);
+      const items = grid.items;
+      const objs = grid.objs;
+      for (let i = 0; i < count; i++) out[i] = objs[items[start + i]];
+      return out;
+    }
+    h = (h + 1) & grid.mask;
+  }
+  return null;
+}
+
+function packGrid(ix, iz, counts, items, objs) {
+  const n = ix.length;
+  let cap = 16;
+  const need = Math.max(16, n * 2);
+  while (cap < need) cap <<= 1;
+  const keysX = new Int32Array(cap);
+  const keysZ = new Int32Array(cap);
+  keysX.fill(EMPTY);
+  const start = new Int32Array(cap);
+  const count = new Uint32Array(cap);
+  const mask = cap - 1;
+  let cursor = 0;
+  for (let i = 0; i < n; i++) {
+    const x = ix[i];
+    const z = iz[i];
+    let h = mixCell(x, z) & mask;
+    while (keysX[h] !== EMPTY) h = (h + 1) & mask;
+    keysX[h] = x;
+    keysZ[h] = z;
+    start[h] = cursor;
+    count[h] = counts[i];
+    cursor += counts[i];
+  }
+  const grid = { kind: "grid", cell: CELL, size: n, mask, keysX, keysZ, start, count, items, objs };
+  grid.around = (x, z, rad) => {
+    const cx = Math.floor(x / CELL);
+    const cz = Math.floor(z / CELL);
+    const out = [];
+    for (let gx = cx - rad; gx <= cx + rad; gx++) {
+      for (let gz = cz - rad; gz <= cz + rad; gz++) {
+        const group = cellAt(grid, gx, gz);
+        if (group) out.push(group);
+      }
+    }
+    return out;
+  };
+  return grid;
+}
+
 export function encodeCity(city, index) {
   const w = new Writer();
   w.u8(75); w.u8(82); w.u8(48); w.u8(50);
-  w.u16(1);
+  w.u16(2);
+  w.u8(1);
   const classes = CLASSES.slice();
   const kinds = KINDS.slice();
   for (const road of city.roads) dictId(classes, road.c);
@@ -141,6 +206,7 @@ export function encodeCity(city, index) {
   w.u32(city.buildings.length);
   for (const b of city.buildings) {
     w.f32(b.x); w.f32(b.z); w.f32(b.w); w.f32(b.d); w.f32(b.h); w.f32(b.rot || 0); w.f32(b.base || 0);
+    w.f32(b.deck != null ? b.deck : (b.base || 0));
     const kind = dictId(kinds, b.k);
     w.u8(kind === 255 ? 255 : kind);
     if (kind === 255) w.str(b.k || "");
@@ -236,7 +302,9 @@ function lakeBoxes(lakes) {
 export function decodeCity(buf) {
   const r = new Reader(buf);
   if (r.u8() !== 75 || r.u8() !== 82 || r.u8() !== 48 || r.u8() !== 50) throw new Error("Map file is not a Kyiv chart");
-  if (r.u16() !== 1) throw new Error("Map file is from a different build");
+  const version = r.u16();
+  if (version !== 1 && version !== 2) throw new Error("Map file is from a different build");
+  if (version >= 2) r.u8();
   const classes = readDict(r);
   const kinds = readDict(r);
   const city = {
@@ -267,6 +335,7 @@ export function decodeCity(buf) {
   const bCount = r.u32();
   for (let i = 0; i < bCount; i++) {
     const b = { x: r.f32(), z: r.f32(), w: r.f32(), d: r.f32(), h: r.f32(), rot: r.f32(), base: r.f32() };
+    if (version >= 2) b.deck = r.f32();
     let kind = r.u8();
     b.k = kind === 255 ? r.str() : (kinds[kind] || "");
     city.buildings.push(b);
@@ -296,42 +365,56 @@ export function decodeCity(buf) {
   const townCount = r.u32();
   for (let i = 0; i < townCount; i++) city.towns.push({ n: r.str(), x: r.f32(), z: r.f32() });
 
+  const roadObjs = [];
   const roadSeg = city.roads.map(() => []);
   const roadSegment = (i, k) => {
     const row = roadSeg[i];
-    if (row[k]) return row[k];
+    const have = row[k];
+    if (have != null) return have;
     const road = city.roads[i];
     const p = road.p;
     const j = k * 2;
-    const seg = {
+    const id = roadObjs.length;
+    roadObjs.push({
       x0: p[j], z0: p[j + 1], x1: p[j + 2], z1: p[j + 3],
       w: road.w, br: road.br || 0, n: road.n || "", c: road.c, ow: road.ow || 0, i, j,
       y0: road.ey[k], y1: road.ey[k + 1], hw0: road.hw[k], hw1: road.hw[k + 1],
-    };
-    row[k] = seg;
-    return seg;
+    });
+    row[k] = id;
+    return id;
   };
-  const readCells = (take) => {
-    const map = new Map();
+  const readGrid = (idOf, objs) => {
     const n = r.u32();
+    const ix = new Int32Array(n);
+    const iz = new Int32Array(n);
+    const counts = new Uint32Array(n);
+    let items = new Int32Array(Math.max(16, n));
+    let used = 0;
+    const push = (id) => {
+      if (used === items.length) {
+        const next = new Int32Array(items.length * 2);
+        next.set(items);
+        items = next;
+      }
+      items[used++] = id;
+    };
     for (let i = 0; i < n; i++) {
-      const ix = r.i32();
-      const iz = r.i32();
+      ix[i] = r.i32();
+      iz[i] = r.i32();
       const count = r.u32();
-      const list = new Array(count);
-      for (let k = 0; k < count; k++) list[k] = take();
-      map.set(ix + "," + iz, list);
+      counts[i] = count;
+      for (let k = 0; k < count; k++) push(idOf());
     }
-    return map;
+    return packGrid(ix, iz, counts, items.slice(0, used), objs);
   };
-  const roadCells = readCells(() => roadSegment(r.u32(), r.u32()));
-  const bldCells = readCells(() => city.buildings[r.u32()]);
+  const roadCells = readGrid(() => roadSegment(r.u32(), r.u32()), roadObjs);
+  const bldCells = readGrid(() => r.u32(), city.buildings);
   const riverGeom = [];
   const riverN = r.u32();
   for (let i = 0; i < riverN; i++) {
     riverGeom.push({ x0: r.f32(), z0: r.f32(), x1: r.f32(), z1: r.f32(), w: r.f32() });
   }
-  const riverCells = readCells(() => riverGeom[r.u32()]);
+  const riverCells = readGrid(() => r.u32(), riverGeom);
   return {
     city,
     index: { roadCells, bldCells, riverCells, lakes: lakeBoxes(city.lakes), graph: new Map() },

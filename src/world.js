@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { heightAt } from "./elev.js";
-import { buildingContact, cellsAround, nearestRoad, onRoad, roadDeck, waterAt } from "./geo.js?v=68";
+import { buildingContact, cellsAround, nearestRoad, onRoad, roadDeck, streetVisual, waterAt } from "./geo.js?v=70";
 import { fieldAt } from "./airfields.js?v=2";
 import { createCombat } from "./combat.js?v=19";
 
@@ -225,7 +225,97 @@ function pushWall(pos, nrm, x0, z0, x1, z1, nx, nz, off0, off1, y0, y1, h) {
   for (let i = 0; i < 6; i++) nrm.push(0, 1, 0);
 }
 
-const ROAD_CHUNK = 1600;
+const ROAD_CHUNK = 4800;
+const CHUNK_REFRESH = 800;
+const CHUNK_PAD = 2500;
+
+function freezeStatic(obj) {
+  obj.matrixAutoUpdate = false;
+  obj.matrixWorldAutoUpdate = false;
+  obj.updateMatrix();
+  obj.matrixWorld.copy(obj.matrix);
+  obj.matrixWorldNeedsUpdate = false;
+  const children = obj.children;
+  for (let i = 0; i < children.length; i++) freezeStatic(children[i]);
+}
+
+function childSphere(child) {
+  if (child.boundingSphere && child.boundingSphere.radius >= 0) return child.boundingSphere;
+  const geo = child.geometry;
+  if (!geo) return null;
+  if (!geo.boundingSphere) geo.computeBoundingSphere();
+  if (!geo.boundingSphere || geo.boundingSphere.radius < 0) return null;
+  return geo.boundingSphere;
+}
+
+function coverChunk(chunk) {
+  let minX = Infinity;
+  let minY = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let maxZ = -Infinity;
+  const children = chunk.children;
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i];
+    const s = childSphere(child);
+    if (!s) continue;
+    const cx = s.center.x + child.position.x;
+    const cy = s.center.y + child.position.y;
+    const cz = s.center.z + child.position.z;
+    const r = s.radius;
+    if (cx - r < minX) minX = cx - r;
+    if (cy - r < minY) minY = cy - r;
+    if (cz - r < minZ) minZ = cz - r;
+    if (cx + r > maxX) maxX = cx + r;
+    if (cy + r > maxY) maxY = cy + r;
+    if (cz + r > maxZ) maxZ = cz + r;
+  }
+  chunk.userData.cx = minX === Infinity ? 0 : (minX + maxX) * 0.5;
+  chunk.userData.cz = minZ === Infinity ? 0 : (minZ + maxZ) * 0.5;
+  chunk.userData.r = minX === Infinity ? 0 : 0.5 * Math.hypot(maxX - minX, maxY - minY, maxZ - minZ);
+}
+
+function parkChunks(root, chunks) {
+  const parked = [];
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    if (!chunk.children.length) continue;
+    coverChunk(chunk);
+    freezeStatic(chunk);
+    parked.push(chunk);
+  }
+  root.userData.parked = parked;
+  root.userData.shown = new Uint8Array(parked.length);
+  root.userData.ax = Infinity;
+  root.userData.az = Infinity;
+  root.userData.far = -1;
+}
+
+function showNear(root, x, z, far) {
+  const parked = root.userData.parked;
+  if (!parked) return;
+  if (Math.hypot(x - root.userData.ax, z - root.userData.az) < CHUNK_REFRESH && Math.abs(far - root.userData.far) < 1000) return;
+  root.userData.ax = x;
+  root.userData.az = z;
+  root.userData.far = far;
+  const shown = root.userData.shown;
+  const limit = far + CHUNK_PAD;
+  for (let i = 0; i < parked.length; i++) {
+    const chunk = parked[i];
+    const dx = chunk.userData.cx - x;
+    const dz = chunk.userData.cz - z;
+    const reach = limit + chunk.userData.r;
+    const on = dx * dx + dz * dz <= reach * reach;
+    if (on && !shown[i]) {
+      root.add(chunk);
+      shown[i] = 1;
+    } else if (!on && shown[i]) {
+      root.remove(chunk);
+      shown[i] = 0;
+    }
+  }
+}
 
 function emptyRoadPack() {
   return {
@@ -487,6 +577,7 @@ function makeRoads(city, index, flight) {
   const lampGeo = joinGeos([pole, arm, head]);
   const root = new THREE.Group();
   root.frustumCulled = false;
+  const chunks = [];
   for (const pack of packs.values()) {
     const chunk = new THREE.Group();
     chunk.frustumCulled = false;
@@ -565,8 +656,9 @@ function makeRoads(city, index, flight) {
       rails.renderOrder = 2;
       chunk.add(rails);
     }
-    if (chunk.children.length) root.add(chunk);
+    if (chunk.children.length) chunks.push(chunk);
   }
+  parkChunks(root, chunks);
   return { mesh: root, rails: railSegs };
 }
 
@@ -857,6 +949,7 @@ function makeBuildings(city, index) {
   const bandMat = new THREE.MeshLambertMaterial({ color: 0xb7b0a4 });
   const root = new THREE.Group();
   root.frustumCulled = false;
+  const chunks = [];
   let wallMesh = null;
   for (const list of buckets.values()) {
   const mesh = new THREE.InstancedMesh(geo, mat, list.length);
@@ -915,14 +1008,7 @@ function makeBuildings(city, index) {
       if (Math.hypot(b.x, b.z) < 420) wall = [0xf7f1e4, 0xe9dcc4, 0xf3e2c0, 0xefe8dc][zone % 4];
       if (b.k === "com") wall = 0xd5e0ea;
     }
-    let base = b.base || 0;
-    if (index && b.k !== "church") {
-      const near = nearestRoad(index, b.x, b.z, 14);
-      if (near && !near.seg?.br) {
-        const hw = (near.half != null ? near.half : Math.max(3.1, (near.w || 6) * 0.55)) * 1.2;
-        if (near.dist < hw + 8 && near.y - base < 3.2 && base - near.y < 1.4) base = near.y - 0.04;
-      }
-    }
+    const base = b.deck != null ? b.deck : streetVisual(b, index);
     dummy.position.set(b.x, base, b.z);
     dummy.rotation.set(0, -b.rot, 0);
     dummy.scale.set(vw, h, vd);
@@ -976,8 +1062,9 @@ function makeBuildings(city, index) {
   group.frustumCulled = false;
   group.add(mesh, plinths, roofs, cornices, bands);
   if (!wallMesh) wallMesh = mesh;
-  root.add(group);
+  chunks.push(group);
   }
+  parkChunks(root, chunks);
   root.userData.walls = wallMesh;
   return root;
 }
@@ -2403,6 +2490,10 @@ export function createWorld(city, index, flight = false) {
 
   const buildings = makeBuildings(city, index);
   if (buildings) scene.add(buildings);
+  const viewX = home?.x ?? city.spawn?.x ?? 0;
+  const viewZ = home?.z ?? city.spawn?.z ?? 0;
+  showNear(roads, viewX, viewZ, 9000);
+  if (buildings) showNear(buildings, viewX, viewZ, 9000);
 
   let treePack = makeTrees(city, flight ? 4 : 2, index);
   scene.add(...treePack.parts);
@@ -2590,6 +2681,9 @@ export function createWorld(city, index, flight = false) {
     },
     sync(player, sim, dt) {
       const agl = Math.max(0, player.y - heightAt(player.x, player.z));
+      const viewFar = player.flying || agl > 45 ? 48000 : 9000;
+      showNear(roads, player.x, player.z, viewFar);
+      if (buildings) showNear(buildings, player.x, player.z, viewFar);
       const span = Math.min(120000, Math.max(7200, 6800 + agl * 16));
       const moved = Math.hypot(player.x - (ground.userData.cx || 0), player.z - (ground.userData.cz || 0));
       if (moved > span * 0.12 || Math.abs(span - (ground.userData.span || 0)) > span * 0.08) scheduleGround(player.x, player.z, span);

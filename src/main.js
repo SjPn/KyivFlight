@@ -1,14 +1,14 @@
 import * as THREE from "three";
 import { createAudio } from "./audio.js?v=35";
 import { readElev } from "./elev.js";
-import { clearPlazas, indexCity, nearestRoad, onRoad, openStreets, presentEast } from "./geo.js?v=69";
-import { decodeCity } from "./mapio.js?v=1";
+import { clearPlazas, indexCity, nearestRoad, onRoad, openStreets, presentEast } from "./geo.js?v=70";
+import { decodeCity } from "./mapio.js?v=2";
 import { FIELDS, fieldAt, nearestField, runwayStart } from "./airfields.js?v=2";
 import { createPlayer, resetPlayer, updatePlayer } from "./player.js?v=88";
 import { armSortie, clearRetry, createSim, nearestSight, pickSortie, restartSortie, retryHint, updateSim } from "./sim.js?v=65";
 import { isPhone, mountTouch } from "./touch.js?v=3";
-import { createUI } from "./ui.js?v=92";
-import { createWorld } from "./world.js?v=116";
+import { createUI } from "./ui.js?v=93";
+import { createWorld } from "./world.js?v=117";
 
 const app = document.querySelector("#app");
 const loading = document.querySelector("#loading");
@@ -65,7 +65,7 @@ function bootClock() {
 async function fetchCounted(url, onBytes, missing) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(missing);
-  const total = Number(res.headers.get("content-length")) || 0;
+  const total = Number(res.headers.get("x-size")) || Number(res.headers.get("content-length")) || 0;
   if (!res.body || !res.body.getReader) {
     const buf = new Uint8Array(await res.arrayBuffer());
     onBytes(buf.byteLength, total || buf.byteLength);
@@ -91,7 +91,7 @@ async function fetchCounted(url, onBytes, missing) {
 }
 
 const yieldPaint = () => new Promise((resolve) => setTimeout(resolve, 0));
-const DATA_CACHE = "kievride-data-v51";
+const DATA_CACHE = "kievride-data-v52";
 
 async function fetchCached(url, onBytes, missing) {
   if (typeof caches !== "undefined") {
@@ -336,7 +336,7 @@ async function boot() {
   const onElev = (n, t) => { got.elev = n; totals.elev = t; noteFetch(); };
   const loadChart = async () => {
     try {
-      return { bin: true, bytes: await fetchCached("/data/kyiv.bin?v=51", onMap, "nomap") };
+      return { bin: true, bytes: await fetchCached("/data/kyiv.bin?v=52", onMap, "nomap") };
     } catch (err) {
       if (!/nomap/i.test(err.message || "")) throw err;
       return { bin: false, bytes: await fetchCached("/data/kyiv.json?v=49", onMap, "Map missing. Run npm run map") };

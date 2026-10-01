@@ -37,10 +37,22 @@ const server = http.createServer((req, res) => {
     res.end("not found");
     return;
   }
-  res.writeHead(200, {
+  const headers = {
     "Content-Type": types[path.extname(file)] || "application/octet-stream",
     "Cache-Control": "no-cache",
-  });
+  };
+  const gz = file + ".gz";
+  const accept = String(req.headers["accept-encoding"] || "");
+  if (file.endsWith(".bin") && /\bgzip\b/.test(accept) && fs.existsSync(gz)) {
+    headers["Content-Encoding"] = "gzip";
+    headers["Content-Length"] = String(fs.statSync(gz).size);
+    headers["X-Size"] = String(fs.statSync(file).size);
+    headers.Vary = "Accept-Encoding";
+    res.writeHead(200, headers);
+    fs.createReadStream(gz).pipe(res);
+    return;
+  }
+  res.writeHead(200, headers);
   fs.createReadStream(file).pipe(res);
 });
 

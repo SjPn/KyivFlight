@@ -741,6 +741,7 @@ export function clearPlazas(city) {
 }
 
 export function cellsAround(map, x, z, rad) {
+  if (map && map.kind === "grid") return map.around(x, z, rad);
   const cx = Math.floor(x / CELL);
   const cz = Math.floor(z / CELL);
   const out = [];
@@ -795,6 +796,17 @@ export function nearestRoad(index, x, z, maxDist = 48) {
     }
   }
   return best;
+}
+
+export function streetVisual(b, index) {
+  const base = b.base || 0;
+  if (!index || b.k === "church") return base;
+  const near = nearestRoad(index, b.x, b.z, 14);
+  if (near && !near.seg?.br) {
+    const hw = (near.half != null ? near.half : Math.max(3.1, (near.w || 6) * 0.55)) * 1.2;
+    if (near.dist < hw + 8 && near.y - base < 3.2 && base - near.y < 1.4) return near.y - 0.04;
+  }
+  return base;
 }
 
 export function roadY(index, x, z) {

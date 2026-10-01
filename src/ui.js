@@ -1,4 +1,4 @@
-import { cellsAround } from "./geo.js?v=69";
+import { cellsAround } from "./geo.js?v=70";
 
 function showRoad(cls, mpp) {
   if (cls === "motorway" || cls === "trunk" || cls === "primary") return true;
