@@ -92,7 +92,7 @@ const BOARD = [
 ];
 
 function meta(id) {
-  return CHAIN.find((s) => s.id === id) || BOARD.find((s) => s.id === id) || { id, title: "Sortie", blurb: "" };
+  return CHAIN.find((s) => s.id === id) || BOARD.find((s) => s.id === id) || { id, title: "Mission", blurb: "" };
 }
 
 function setObj(sim, title, text, bar, dist, time) {
@@ -427,7 +427,7 @@ function completeSortie(sim, player) {
   sim.pin = null;
   sim.cue = "M · chart";
   sim.openChart = true;
-  setObj(sim, "Pick a sortie", "Chart", 0, null, null);
+  setObj(sim, "Pick a mission", "Chart", 0, null, null);
   refreshCards(sim);
 }
 
@@ -607,7 +607,7 @@ export function pickSortie(sim, player, id) {
   if (sim.campaign < CHAIN.length) return;
   if (!BOARD.some((s) => s.id === id)) return;
   if (player.flying) {
-    sim.toast = "Land to pick a sortie";
+    sim.toast = "Land to pick a mission";
     sim.toastT = 1.6;
     return;
   }
@@ -646,7 +646,7 @@ export function updateSim(sim, player, dt, fx) {
   else {
     sim.pin = null;
     sim.cue = "M · chart";
-    setObj(sim, "Pick a sortie", "Chart", 0, null, null);
+    setObj(sim, "Pick a mission", "Chart", 0, null, null);
   }
   tickVoice(sim, player);
   const pad = fieldAt(sim.fields, player.x, player.z);

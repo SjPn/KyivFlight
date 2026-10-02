@@ -5,9 +5,9 @@ import { clearPlazas, indexCity, nearestRoad, onRoad, openStreets, presentEast }
 import { decodeCity } from "./mapio.js?v=2";
 import { FIELDS, fieldAt, nearestField, runwayStart } from "./airfields.js?v=2";
 import { createPlayer, resetPlayer, updatePlayer } from "./player.js?v=88";
-import { armSortie, clearRetry, createSim, nearestSight, pickSortie, restartSortie, retryHint, updateSim } from "./sim.js?v=65";
+import { armSortie, clearRetry, createSim, nearestSight, pickSortie, restartSortie, retryHint, updateSim } from "./sim.js?v=66";
 import { isPhone, mountTouch } from "./touch.js?v=4";
-import { createUI } from "./ui.js?v=93";
+import { createUI } from "./ui.js?v=94";
 import { createWorld } from "./world.js?v=117";
 
 const app = document.querySelector("#app");
@@ -43,7 +43,7 @@ function bootClock() {
     const elapsed = performance.now() - t0;
     const left = p > 0.03 ? (elapsed * (1 - p)) / p : 12000;
     const secs = Math.max(0, Math.ceil(left / 1000));
-    setLoad(secs > 0 ? `Charting Kyiv… ${secs} s` : "A moment…", Math.max(0.02, Math.min(0.99, p)));
+    setLoad(secs > 0 ? `Mapping Kyiv… ${secs} s` : "A moment…", Math.max(0.02, Math.min(0.99, p)));
   }
   return {
     set(id, value) {

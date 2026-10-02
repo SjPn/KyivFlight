@@ -226,7 +226,7 @@ export function createUI(city, index) {
         <button data-act="recenter">${city.flight ? "To plane" : "To car"}</button>
       </div>
       <div class="scale"><i></i><span></span></div>
-      <div class="board"><h4>Sorties</h4><div class="cards"></div></div>
+      <div class="board"><h4>Missions</h4><div class="cards"></div></div>
       <div class="keys">${city.flight ? "− oblast · + closer · wheel zooms · To plane closes the map" : "− oblast · + closer · wheel zooms · To car returns to driving · Esc closes"}</div>
       <div class="tip off"><b></b><span></span><em></em></div>
       <div class="copy">© OpenStreetMap</div>
