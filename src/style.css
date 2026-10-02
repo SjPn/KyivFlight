@@ -248,7 +248,7 @@ html, body {
 
 .hud { position: fixed; inset: 0; z-index: 12; pointer-events: none; font-family: "Segoe UI", system-ui, sans-serif; }
 .hud.hidden .topbar, .hud.hidden .money, .hud.hidden .explore, .hud.hidden .mission,
-.hud.hidden .leftcol, .hud.hidden .hint, .hud.hidden .place, .hud.hidden .crosshair, .hud.hidden .lockbox, .hud.hidden .lead, .hud.hidden .tags, .hud.hidden .deck { visibility: hidden; }
+.hud.hidden .leftcol, .hud.hidden .hint, .hud.hidden .place, .hud.hidden .crosshair, .hud.hidden .shoot, .hud.hidden .lockbox, .hud.hidden .lead, .hud.hidden .tags, .hud.hidden .deck { visibility: hidden; }
 .topbar { position: absolute; top: 1.6vh; left: 1.4vw; display: flex; gap: 6px; pointer-events: auto; z-index: 6; }
 .topbar .key { padding: 3px 8px 3px 3px; font-size: 11px; }
 .mission { position: absolute; top: 48px; left: 50%; transform: translateX(-50%); pointer-events: none; z-index: 4; max-width: 240px; }
@@ -423,6 +423,19 @@ html, body {
 .crosshair:before { left: 50%; top: -8px; width: 2px; height: 6px; margin-left: -1px; }
 .crosshair:after { left: 50%; bottom: -8px; width: 2px; height: 6px; margin-left: -1px; }
 .crosshair.lock { border-color: #ff6a4a; }
+.shoot {
+  position: absolute;
+  left: 50%;
+  top: 54%;
+  transform: translateX(-50%);
+  color: #ffe8e2;
+  font-weight: 800;
+  font-size: 28px;
+  letter-spacing: 0.16em;
+  text-shadow: 0 1px 4px #000, 0 0 16px #ff3b30aa;
+  pointer-events: none;
+}
+.shoot.off { display: none; }
 .lockbox {
   position: absolute; width: 34px; height: 34px; margin: -17px 0 0 -17px;
   border: 2px solid #ff3b30; border-radius: 50%;

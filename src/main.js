@@ -1,14 +1,14 @@
 import * as THREE from "three";
-import { createAudio } from "./audio.js?v=35";
+import { createAudio } from "./audio.js?v=38";
 import { readElev } from "./elev.js";
 import { clearPlazas, indexCity, nearestRoad, onRoad, openStreets, presentEast } from "./geo.js?v=70";
 import { decodeCity } from "./mapio.js?v=2";
 import { FIELDS, fieldAt, nearestField, runwayStart } from "./airfields.js?v=2";
 import { createPlayer, resetPlayer, updatePlayer } from "./player.js?v=88";
-import { armSortie, clearRetry, createSim, nearestSight, pickSortie, restartSortie, retryHint, updateSim } from "./sim.js?v=66";
+import { armSortie, clearRetry, createSim, nearestSight, pickSortie, restartSortie, retryHint, updateSim } from "./sim.js?v=68";
 import { isPhone, mountTouch } from "./touch.js?v=4";
-import { createUI } from "./ui.js?v=94";
-import { createWorld } from "./world.js?v=117";
+import { createUI } from "./ui.js?v=96";
+import { createWorld } from "./world.js?v=120";
 
 const app = document.querySelector("#app");
 const loading = document.querySelector("#loading");
@@ -232,11 +232,16 @@ function wrapRoll(a) {
   return a;
 }
 
+const RANGE_WORDS = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen", "Twenty", "Twenty-one", "Twenty-two", "Twenty-three", "Twenty-four", "Twenty-five"];
+
+function rangeWords(meters, cap) {
+  const n = Math.max(1, Math.min(cap, Math.round((meters || 0) / 1000)));
+  return RANGE_WORDS[n] + (n === 1 ? " kilometer." : " kilometers.");
+}
+
 function foxLine(meters) {
   if (meters == null || meters < 800) return "Fox two. Fox two.";
-  const words = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen"];
-  const n = Math.max(1, Math.min(15, Math.round(meters / 1000)));
-  return "Fox two. " + words[n] + (n === 1 ? " kilometer." : " kilometers.");
+  return "Fox two. " + rangeWords(meters, 15);
 }
 
 function steerTo(h, target) {
@@ -535,6 +540,7 @@ async function boot() {
 
   let last = performance.now();
   let hadLock = false;
+  let lockSay = 0;
   let wasWreck = false;
   let wasSpin = false;
   let stallT = 0;
@@ -583,7 +589,14 @@ async function boot() {
       if (fx.missile) audio.callout(foxLine(player.shotRange), 3);
       if (fx.flare) audio.flare();
       if (fx.boom) audio.boom();
-      if (player.lock && !hadLock) audio.lock();
+      if (player.flying && !player.wrecked && player.lock) {
+        if (!hadLock) {
+          audio.lock();
+          lockSay = 0;
+        }
+        lockSay -= dt;
+        if (lockSay <= 0) lockSay = audio.callout("Target locked.", 2) ? 5 : 1.2;
+      } else lockSay = 0;
       hadLock = !!player.lock;
       if (player.stallWarn || player.stalling) {
         stallT -= dt;
@@ -653,8 +666,8 @@ async function boot() {
         sim.toastT = 1.6;
       }
       if (fx.raid) {
-        const km = Math.max(1, Math.round((fx.raidRange || 12000) / 1000));
-        const call = (fx.raid > 1 ? "Two, east, " : "Bandit, east, ") + km + " kilometers.";
+        const lead = fx.raid > 2 ? "Four, east, " : fx.raid > 1 ? "Two, east, " : "Bandit, east, ";
+        const call = lead + rangeWords(fx.raidRange || 12000, 25);
         audio.callout(call, 3);
         sim.toast = call;
         sim.toastT = 2.4;

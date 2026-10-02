@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { heightAt } from "./elev.js";
 import { buildingContact, cellsAround, nearestRoad, onRoad, roadDeck, streetVisual, waterAt } from "./geo.js?v=70";
 import { fieldAt } from "./airfields.js?v=2";
-import { createCombat } from "./combat.js?v=19";
+import { createCombat } from "./combat.js?v=21";
 
 const CLASS_COLOR = {
   motorway: [1, 1, 1],
@@ -1697,7 +1697,6 @@ function plate(verts, material) {
 function makePlane() {
   const g = new THREE.Group();
   const paint = new THREE.MeshPhongMaterial({ color: 0x0057b8, specular: 0x9ec4ea, shininess: 46, side: THREE.DoubleSide });
-  const surface = new THREE.MeshPhongMaterial({ color: 0x1a6fbe, specular: 0xc5d8ee, shininess: 32, side: THREE.DoubleSide });
   const accent = new THREE.MeshPhongMaterial({ color: 0xffd100, shininess: 28, side: THREE.DoubleSide });
   const dark = new THREE.MeshPhongMaterial({ color: 0x232830, shininess: 18 });
   const glass = new THREE.MeshPhongMaterial({ color: 0xb7d4ea, transparent: true, opacity: 0.55, shininess: 90 });
@@ -1742,46 +1741,95 @@ function makePlane() {
   const sash = new THREE.Mesh(new THREE.TorusGeometry(0.9, 0.026, 8, 24), accent);
   sash.rotation.y = Math.PI / 2;
   sash.position.set(0, 1.55, 0.35);
-  const wingVerts = (span) => [
-    0, 0.055, 1.15,
-    span, 0.02, -0.7,
-    span * 0.94, 0.015, -1.55,
-    0, 0.045, -1.85,
-    0, -0.04, 1.15,
-    span, -0.012, -0.7,
-    span * 0.94, -0.01, -1.55,
-    0, -0.03, -1.85,
+  const mix = (a, b, t) => a + (b - a) * t;
+  const HINGE = 0.7;
+  const wingStation = (span, s) => ({
+    xLe: span * s,
+    xTe: span * 0.94 * s,
+    zLe: mix(1.15, -0.7, s),
+    zTe: mix(-1.85, -1.55, s),
+    yLeT: mix(0.055, 0.02, s),
+    yTeT: mix(0.045, 0.015, s),
+    yLeB: mix(-0.04, -0.012, s),
+    yTeB: mix(-0.03, -0.01, s),
+  });
+  const chordAt = (st, t) => ({
+    x: mix(st.xLe, st.xTe, t),
+    z: mix(st.zLe, st.zTe, t),
+    yT: mix(st.yLeT, st.yTeT, t),
+    yB: mix(st.yLeB, st.yTeB, t),
+  });
+  const quadVerts = (corners) => {
+    const v = [];
+    for (const p of corners) v.push(p.x, p.yT, p.z);
+    for (const p of corners) v.push(p.x, p.yB, p.z);
+    return v;
+  };
+  const wingCorners = (span, s0, s1, t0, t1) => [
+    chordAt(wingStation(span, s0), t0),
+    chordAt(wingStation(span, s1), t0),
+    chordAt(wingStation(span, s1), t1),
+    chordAt(wingStation(span, s0), t1),
   ];
+  const wingVerts = (span) => quadVerts(wingCorners(span, 0, 1, 0, HINGE - 0.012));
+  const hinged = (corners) => {
+    const inn = corners[0];
+    const out = corners[1];
+    const origin = new THREE.Vector3(inn.x, (inn.yT + inn.yB) * 0.5, inn.z);
+    const xAxis = new THREE.Vector3(out.x - inn.x, (out.yT + out.yB) * 0.5 - origin.y, out.z - inn.z);
+    if (xAxis.lengthSq() < 1e-8) xAxis.set(1, 0, 0);
+    xAxis.normalize();
+    const yAxis = new THREE.Vector3(0, 1, 0);
+    xAxis.addScaledVector(yAxis, -xAxis.dot(yAxis)).normalize();
+    const zAxis = new THREE.Vector3().crossVectors(xAxis, yAxis).normalize();
+    const aft = corners[3];
+    const fwd = new THREE.Vector3(inn.x - aft.x, 0, inn.z - aft.z);
+    if (zAxis.dot(fwd) < 0) {
+      zAxis.negate();
+      xAxis.negate();
+    }
+    const basis = new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis);
+    const inv = basis.clone().invert();
+    const local = corners.map((p) => ({
+      top: new THREE.Vector3(p.x, p.yT, p.z).sub(origin).applyMatrix4(inv),
+      bot: new THREE.Vector3(p.x, p.yB, p.z).sub(origin).applyMatrix4(inv),
+    }));
+    const verts = [];
+    for (const p of local) verts.push(p.top.x, p.top.y, p.top.z);
+    for (const p of local) verts.push(p.bot.x, p.bot.y, p.bot.z);
+    const mesh = plate(verts, paint);
+    const group = new THREE.Group();
+    group.position.copy(origin);
+    group.quaternion.setFromRotationMatrix(basis);
+    group.add(mesh);
+    return { group, mesh, local };
+  };
   const swept = (sign) => {
     const pivot = new THREE.Group();
     pivot.position.set(sign * 0.72, 1.42, 0.05);
-    const wing = plate(wingVerts(sign * 7.15), paint);
+    const span = sign * 7.15;
+    const wing = plate(wingVerts(span), paint);
     const fence = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.22, 0.42), accent);
     fence.position.set(sign * 5.7, 0.12, -1.05);
     const stripe = new THREE.Mesh(new THREE.BoxGeometry(2.9, 0.012, 0.1), accent);
     stripe.position.set(sign * 2.05, 0.058, -0.62);
-    const flap = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.04, 0.32), surface);
-    flap.geometry.translate(0, 0, -0.16);
-    flap.position.set(sign * 1.8, 0.02, -1.4);
-    const aileron = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.04, 0.32), surface);
-    aileron.geometry.translate(0, 0, -0.16);
-    aileron.position.set(sign * 4.95, 0.02, -1.24);
-    aileron.userData.sign = sign;
-    const aileronEdge = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.018, 0.04), accent);
-    aileronEdge.position.set(0, 0.016, -0.28);
-    aileron.add(aileronEdge);
-    const span = 2.45;
-    const le = 1.15 + (span / 7.15) * -1.85;
-    const te = -1.85 + (span / 6.72) * 0.3;
+    const flap = hinged(wingCorners(span, 0.07, 0.4, HINGE, 1));
+    const gap = plate(quadVerts(wingCorners(span, 0.4, 0.5, HINGE, 1)), paint);
+    const aileron = hinged(wingCorners(span, 0.5, 0.86, HINGE, 1));
+    aileron.mesh.userData.sign = sign;
+    const tip = plate(quadVerts(wingCorners(span, 0.86, 1, HINGE, 1)), paint);
+    const markSpan = 2.45;
+    const le = 1.15 + (markSpan / 7.15) * -1.85;
+    const te = -1.85 + (markSpan / 6.72) * 0.3;
     const mark = new THREE.Mesh(new THREE.CircleGeometry(0.28, 16), accent);
     mark.rotation.x = -Math.PI / 2;
-    mark.position.set(sign * span, 0.052, (le + te) / 2);
+    mark.position.set(sign * markSpan, 0.052, (le + te) / 2);
     const markIn = new THREE.Mesh(new THREE.CircleGeometry(0.12, 12), paint);
     markIn.rotation.x = -Math.PI / 2;
-    markIn.position.set(sign * span, 0.064, (le + te) / 2);
-    pivot.add(wing, fence, stripe, flap, aileron, mark, markIn);
-    pivot.userData.flap = flap;
-    pivot.userData.aileron = aileron;
+    markIn.position.set(sign * markSpan, 0.064, (le + te) / 2);
+    pivot.add(wing, fence, stripe, flap.group, gap, aileron.group, tip, mark, markIn);
+    pivot.userData.flap = flap.mesh;
+    pivot.userData.aileron = aileron.mesh;
     return pivot;
   };
   const wingL = swept(-1);
@@ -1800,16 +1848,20 @@ function makePlane() {
   const gloveL = glove.clone();
   gloveL.scale.x = -1;
   gloveL.position.x = -0.15;
-  const stab = plate([
-    0, 0.03, 0.55,
-    2.35, 0.015, -0.15,
-    2.15, 0.01, -0.85,
-    0, 0.025, -0.7,
-    0, -0.02, 0.55,
-    2.35, -0.01, -0.15,
-    2.15, -0.008, -0.85,
-    0, -0.018, -0.7,
-  ], paint);
+  const stabStation = (s) => ({
+    xLe: mix(0, 2.35, s),
+    xTe: mix(0, 2.15, s),
+    zLe: mix(0.55, -0.15, s),
+    zTe: mix(-0.7, -0.85, s),
+    yLeT: mix(0.03, 0.015, s),
+    yTeT: mix(0.025, 0.01, s),
+    yLeB: mix(-0.02, -0.01, s),
+    yTeB: mix(-0.018, -0.008, s),
+  });
+  const stabAt = (s, t) => chordAt(stabStation(s), t);
+  const stab = plate(quadVerts([
+    stabAt(0, 0), stabAt(1, 0), stabAt(1, HINGE - 0.012), stabAt(0, HINGE - 0.012),
+  ]), paint);
   stab.position.set(0.15, 1.62, -5.15);
   const stabL = stab.clone();
   stabL.scale.x = -1;
@@ -1870,13 +1922,18 @@ function makePlane() {
   const spine = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.028, 2.3), accent);
   spine.position.set(0, 2.45, 0.12);
   const elevator = (sign) => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.032, 0.28), surface);
-    mesh.geometry.translate(0, 0, -0.14);
-    mesh.position.set(sign * 1.0, 1.64, -5.56);
-    const edge = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.016, 0.035), accent);
-    edge.position.set(0, 0.014, -0.25);
-    mesh.add(edge);
-    return mesh;
+    const local = [0.04, 0.96].map((s) => [stabAt(s, HINGE), stabAt(s, 1)]);
+    const corners = [local[0][0], local[1][0], local[1][1], local[0][1]].map((p) => ({
+      x: sign * p.x,
+      z: p.z,
+      yT: p.yT,
+      yB: p.yB,
+    }));
+    const piece = hinged(corners);
+    piece.group.position.x += sign * 0.15;
+    piece.group.position.y += 1.62;
+    piece.group.position.z += -5.15;
+    return piece;
   };
   const elevR = elevator(1);
   const elevL = elevator(-1);
@@ -1903,7 +1960,7 @@ function makePlane() {
   gear.userData.t = 1;
   g.add(
     fuse, radome, canopy, frame, roundel, roundelIn, roundelL, roundelInL, cheat, cheatL, sash,
-    glove, gloveL, wingL, wingR, stab, stabL, elevL, elevR,
+    glove, gloveL, wingL, wingR, stab, stabL, elevL.group, elevR.group,
     finL, finR,
     nacelleL, nacelleR, lipL, lipR, nozzleL, nozzleR, plugL, plugR, flameL, flameR,
     spine, gear,
@@ -1915,7 +1972,7 @@ function makePlane() {
   g.userData.wingR = wingR;
   g.userData.flaps = [wingL.userData.flap, wingR.userData.flap];
   g.userData.ailerons = [wingL.userData.aileron, wingR.userData.aileron];
-  g.userData.elevators = [elevL, elevR];
+  g.userData.elevators = [elevL.mesh, elevR.mesh];
   g.userData.sweep = 0;
   g.userData.flapT = 0;
   return g;

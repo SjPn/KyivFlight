@@ -13,16 +13,40 @@ export function createAudio() {
   let quietPri = 0;
   let cabinVoice = null;
   let callToken = 0;
+  let cabinSrc = null;
+  const clipCache = new Map();
   let voiceOn = true;
   try { voiceOn = localStorage.getItem("kievride-voice") !== "0"; } catch { /* keep talking */ }
+
+  function voiceScore(v) {
+    const name = v.name || "";
+    const lang = v.lang || "";
+    const blob = lang + " " + name;
+    if (/en-IN|india|heera|ravi|kalpana|neerja|swara|irina|pavel/i.test(blob)) return -1;
+    if (!/en-US|en-GB|en-AU/i.test(lang)) return -1;
+    let score = /en-US/i.test(lang) ? 30 : /en-GB/i.test(lang) ? 18 : 8;
+    if (/aria|jenny|zira|samantha|google us english/i.test(name)) score += 80;
+    else if (/ana|hazel|libby|sonia|susan|serena|moira|karen|fiona|kate/i.test(name)) score += 50;
+    if (/natural/i.test(name)) score += 12;
+    if (/female/i.test(name)) score += 12;
+    if (/david|mark\b|guy|george|daniel|ryan|\bmale\b/i.test(name)) score -= 25;
+    if (v.localService) score += 3;
+    return score;
+  }
 
   function pickVoice() {
     if (typeof speechSynthesis === "undefined") return null;
     const voices = speechSynthesis.getVoices?.() || [];
-    cabinVoice = voices.find((v) => /en-US/i.test(v.lang) && /zira|samantha|google uk english female|google us english/i.test(v.name))
-      || voices.find((v) => /en-GB|en-US/i.test(v.lang) && /female/i.test(v.name))
-      || voices.find((v) => /^en/i.test(v.lang))
-      || cabinVoice;
+    let best = null;
+    let bestScore = 0;
+    for (const v of voices) {
+      const score = voiceScore(v);
+      if (score > bestScore) {
+        bestScore = score;
+        best = v;
+      }
+    }
+    if (best) cabinVoice = best;
     return cabinVoice;
   }
   if (typeof speechSynthesis !== "undefined") {
@@ -108,6 +132,62 @@ export function createAudio() {
     const src = ctx.createBufferSource();
     src.buffer = buf;
     return src;
+  }
+
+  function clipSlug(text) {
+    return String(text).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  }
+
+  function stopCabin() {
+    if (!cabinSrc) return;
+    try { cabinSrc.stop(); } catch { /* already ended */ }
+    cabinSrc = null;
+  }
+
+  function playCabin(buffer) {
+    ensure();
+    stopCabin();
+    const src = ctx.createBufferSource();
+    const gain = ctx.createGain();
+    gain.gain.value = 0.92;
+    src.buffer = buffer;
+    src.connect(gain);
+    gain.connect(ctx.destination);
+    cabinSrc = src;
+    src.onended = () => { if (cabinSrc === src) cabinSrc = null; };
+    if (ctx.state === "suspended") ctx.resume();
+    src.start();
+  }
+
+  function loadClip(text) {
+    const slug = clipSlug(text);
+    if (clipCache.has(slug)) return clipCache.get(slug);
+    const pending = fetch("/voice/" + slug + ".wav")
+      .then((res) => {
+        if (!res.ok) throw new Error("missing");
+        return res.arrayBuffer();
+      })
+      .then((raw) => {
+        ensure();
+        return ctx.decodeAudioData(raw.slice(0));
+      })
+      .catch(() => null);
+    clipCache.set(slug, pending);
+    return pending;
+  }
+
+  function speakFallback(text) {
+    if (typeof speechSynthesis === "undefined") return;
+    const voice = pickVoice();
+    if (!voice) return;
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = "en-US";
+    utter.rate = 0.96;
+    utter.pitch = 1;
+    utter.volume = 1;
+    utter.voice = voice;
+    if (speechSynthesis.paused) speechSynthesis.resume();
+    speechSynthesis.speak(utter);
   }
 
   return {
@@ -305,31 +385,28 @@ export function createAudio() {
     voiceOn() { return voiceOn; },
     toggleVoice() {
       voiceOn = !voiceOn;
-      if (!voiceOn && typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
+      if (!voiceOn) {
+        if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
+        stopCabin();
+      }
       try { localStorage.setItem("kievride-voice", voiceOn ? "1" : "0"); } catch { /* private mode */ }
       return voiceOn;
     },
     callout(text, priority = 0) {
       if (!voiceOn) return true;
-      if (typeof speechSynthesis === "undefined" || !text) return false;
+      if (!text) return false;
       const now = performance.now();
       if (now < quietUntil && priority < quietPri) return false;
       quietPri = priority;
       quietUntil = now + 1050;
-      const utter = new SpeechSynthesisUtterance(text);
-      utter.lang = "en-US";
-      utter.rate = 1.05;
-      utter.pitch = 0.82;
-      utter.volume = 1;
-      const voice = pickVoice();
-      if (voice) utter.voice = voice;
       const mine = ++callToken;
-      speechSynthesis.cancel();
-      setTimeout(() => {
+      if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
+      stopCabin();
+      loadClip(text).then((buffer) => {
         if (mine !== callToken) return;
-        if (speechSynthesis.paused) speechSynthesis.resume();
-        speechSynthesis.speak(utter);
-      }, 50);
+        if (buffer) playCabin(buffer);
+        else speakFallback(text);
+      });
       return true;
     },
     horn() {

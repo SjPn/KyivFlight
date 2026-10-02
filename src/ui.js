@@ -160,6 +160,7 @@ export function createUI(city, index) {
       </div>
     </div>
     <div class="crosshair"></div>
+    <div class="shoot off">Shoot</div>
     <div class="lead off"></div>
     <div class="lockbox off"><em></em></div>
     <div class="tags"></div>
@@ -947,6 +948,11 @@ export function createUI(city, index) {
       }
       const cross = $(".crosshair");
       if (cross) cross.classList.toggle("lock", !!player.lock);
+      const shoot = $(".shoot");
+      if (shoot) {
+        const show = player.flying && !player.wrecked && player.lock && player.weapon === 1 && (player.missiles ?? 0) > 0;
+        shoot.classList.toggle("off", !show);
+      }
       const box = $(".lockbox");
       if (box) {
         if (frame.lockScreen) {
@@ -1005,6 +1011,7 @@ export function createUI(city, index) {
       drawGauges(player);
       drawMini(player, street, sim);
       drawBig(player, sim);
+      if (!(sim.pin && camera)) $(".pin")?.classList.add("off");
       if (sim.pin && camera) {
         const el = $(".pin");
         const sp = frame.pinScreen;

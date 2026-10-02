@@ -12,6 +12,7 @@ const types = {
   ".json": "application/json; charset=utf-8",
   ".svg": "image/svg+xml",
   ".ico": "image/x-icon",
+  ".wav": "audio/wav",
 };
 const port = Number(process.env.PORT || 5173);
 

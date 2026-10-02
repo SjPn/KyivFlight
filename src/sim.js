@@ -77,18 +77,18 @@ const FLARE_LOAD = 24;
 const SLOW = 120 / 3.6;
 
 const CHAIN = [
-  { id: "first", title: "First flight", blurb: "Guns, then a lock" },
+  { id: "first", title: "First flight", blurb: "Six drones, missiles" },
   { id: "riverpass", title: "Over the river", blurb: "Under 800 m" },
-  { id: "pairintro", title: "The pair", blurb: "Two drones, one jet" },
+  { id: "pairintro", title: "The pair", blurb: "Four drones, two jets" },
 ];
 
 const BOARD = [
-  { id: "fence", title: "Fence", blurb: "Three drones, east fields" },
-  { id: "river", title: "River", blurb: "Drones along the Dnipro" },
+  { id: "fence", title: "Fence", blurb: "Six drones, east fields" },
+  { id: "river", title: "River", blurb: "Six drones along the Dnipro" },
   { id: "overflight", title: "Overflight", blurb: "Maidan, under 800 m" },
-  { id: "intercept", title: "Intercept", blurb: "Catch the fast drone" },
+  { id: "intercept", title: "Intercept", blurb: "Catch two fast drones" },
   { id: "escort", title: "Escort", blurb: "Stay with the airliner" },
-  { id: "pair", title: "Pair", blurb: "Two jets from the east" },
+  { id: "pair", title: "Pair", blurb: "Four jets from the east" },
 ];
 
 function meta(id) {
@@ -239,57 +239,84 @@ function beginSortie(sim, player, id) {
   clearLesson(sim);
   const plan = { drones: [], civils: [], bandits: 0 };
   if (id === "first") {
-    const p = ahead(player, 1100, 180);
-    plan.drones = [droneAt(p.x, p.z, { agl: 200, radius: 380, pace: 90 / 3.6, hp: 24 })];
+    sim.killsNeed = 6;
+    sim.step = "lock";
+    const spots = [
+      [1300, -360, 170],
+      [1700, 80, 280],
+      [2100, 460, 220],
+      [1500, -820, 340],
+      [1900, 760, 200],
+      [2400, -40, 430],
+    ];
+    plan.drones = spots.map(([dist, side, agl]) => {
+      const p = ahead(player, dist, side);
+      return droneAt(p.x, p.z, { agl, radius: 420, pace: 90 / 3.6, hp: 24 });
+    });
   } else if (id === "riverpass") {
     sim.pin = riverMark(sim.city);
     const mid = {
       x: (player.x + sim.pin.x) * 0.5,
       z: (player.z + sim.pin.z) * 0.5,
     };
-    plan.drones = [droneAt(mid.x, mid.z, { agl: 320, radius: 600, pace: SLOW, hp: 36 })];
+    plan.drones = [
+      droneAt(mid.x, mid.z, { agl: 320, radius: 600, pace: SLOW, hp: 36 }),
+      droneAt(mid.x + 700, mid.z - 420, { agl: 480, radius: 520, pace: SLOW, hp: 36 }),
+    ];
   } else if (id === "pairintro") {
-    sim.killsNeed = 3;
+    sim.killsNeed = 6;
     plan.drones = [
       droneAt(-2500, 1800, { agl: 280, radius: 900, pace: SLOW }),
       droneAt(-4200, -2200, { agl: 360, radius: 800, pace: SLOW }),
+      droneAt(-3100, 500, { agl: 220, radius: 700, pace: SLOW }),
+      droneAt(-5200, -700, { agl: 460, radius: 850, pace: SLOW }),
     ];
-    plan.bandits = 1;
+    plan.bandits = 2;
   } else if (id === "fence") {
-    sim.killsNeed = 3;
+    sim.killsNeed = 6;
     plan.drones = [
       droneAt(-12000, -1800, { agl: 220, radius: 700, pace: SLOW }),
       droneAt(-15000, 2800, { agl: 280, radius: 800, pace: SLOW }),
       droneAt(-10800, 7200, { agl: 340, radius: 650, pace: SLOW }),
+      droneAt(-13200, 900, { agl: 200, radius: 600, pace: SLOW }),
+      droneAt(-14100, 4600, { agl: 420, radius: 750, pace: SLOW }),
+      droneAt(-11800, -4400, { agl: 300, radius: 680, pace: SLOW }),
     ];
   } else if (id === "river") {
-    sim.killsNeed = 3;
+    sim.killsNeed = 6;
     const pts = riverPoints(sim.city);
-    plan.drones = pts.slice(0, 3).map((pt, i) => {
+    plan.drones = [];
+    for (let i = 0; i < 3; i++) {
+      const pt = pts[i % pts.length];
       const path = [];
       for (let k = 0; k < pts.length; k++) path.push(pts[(i + k) % pts.length]);
-      return droneAt(pt.x, pt.z, { agl: 260 + i * 70, pace: SLOW, points: path, hp: 36 });
-    });
+      plan.drones.push(droneAt(pt.x, pt.z, { agl: 260 + i * 70, pace: SLOW, points: path, hp: 36 }));
+      const wing = path.map((p) => ({ x: p.x + 320, z: p.z - 200 }));
+      plan.drones.push(droneAt(pt.x + 320, pt.z - 200, { agl: 430 + i * 50, pace: SLOW, points: wing, hp: 36 }));
+    }
   } else if (id === "overflight") {
     sim.pin = { id: "maidan", n: "Maidan", x: 0, z: 0, note: "Under 800 m" };
   } else if (id === "intercept") {
-    sim.killsNeed = 1;
-    sim.limit = 100;
+    sim.killsNeed = 2;
+    sim.limit = 120;
     const path = [
       { x: -4000, z: 2000 },
       { x: -1200, z: -2500 },
       { x: 2200, z: -9000 },
     ];
-    plan.drones = [droneAt(path[0].x, path[0].z, {
+    const wing = path.map((p) => ({ x: p.x + 560, z: p.z + 380 }));
+    const fast = {
       fast: true,
-      agl: 640,
       pace: 720 / 3.6,
-      points: path.slice(1),
       leave: true,
       hp: 48,
-    })];
+    };
+    plan.drones = [
+      droneAt(path[0].x, path[0].z, { ...fast, agl: 640, points: path.slice(1) }),
+      droneAt(wing[0].x, wing[0].z, { ...fast, agl: 820, points: wing.slice(1) }),
+    ];
   } else if (id === "escort") {
-    sim.killsNeed = 2;
+    sim.killsNeed = 4;
     plan.civils = [{
       x: 2800,
       z: -1800,
@@ -301,10 +328,12 @@ function beginSortie(sim, player, id) {
     plan.drones = [
       droneAt(-1800, 400, { hunt: true, agl: 780, pace: 95, hp: 36 }),
       droneAt(-600, -2600, { hunt: true, agl: 620, pace: 100, hp: 36 }),
+      droneAt(-2500, -700, { hunt: true, agl: 920, pace: 90, hp: 36 }),
+      droneAt(500, -1200, { hunt: true, agl: 520, pace: 105, hp: 36 }),
     ];
   } else if (id === "pair") {
-    sim.killsNeed = 2;
-    plan.bandits = 2;
+    sim.killsNeed = 4;
+    plan.bandits = 4;
   }
   sim.token += 1;
   plan.token = sim.token;
@@ -358,15 +387,15 @@ function failSortie(sim, title) {
 }
 
 const PAR = {
-  first: 180,
+  first: 240,
   riverpass: 160,
-  pairintro: 240,
-  fence: 200,
-  river: 220,
+  pairintro: 320,
+  fence: 280,
+  river: 300,
   overflight: 140,
-  intercept: 90,
-  escort: 200,
-  pair: 220,
+  intercept: 110,
+  escort: 260,
+  pair: 280,
 };
 const LETTERS = ["D", "C", "B", "A", "S"];
 
@@ -433,21 +462,8 @@ function completeSortie(sim, player) {
 
 function onKills(sim, player, n) {
   if (sim.sortieId === "first") {
-    if (sim.step === "guns") {
-      sim.step = "lock";
-      const far = ahead(player, 6500, 500);
-      sim.token += 1;
-      sim.plan = {
-        token: sim.token,
-        drones: [droneAt(far.x, far.z, { agl: 460, radius: 1100, pace: 150 / 3.6, hp: 36 })],
-        civils: [],
-        bandits: 0,
-      };
-      player.weapon = 1;
-      offer(sim, "lock", "Lock.", 3);
-      return;
-    }
-    if (sim.step === "lock") enterLand(sim, player, "Drone down", "Land to rearm");
+    sim.killsGot += n;
+    if (sim.killsGot >= sim.killsNeed) enterLand(sim, player, "Drones down", "Land to rearm");
     return;
   }
   if (!sim.killsNeed) return;
@@ -470,7 +486,7 @@ function tickFight(sim, player, dt) {
   const info = meta(sim.sortieId);
   if (sim.sortieId === "first") {
     pinCraft(sim, player, "drone");
-    setObj(sim, "First flight", sim.step === "lock" ? "Lock" : "Guns", sim.step === "lock" ? 0.5 : 0, null, null);
+    setObj(sim, "First flight", "Missiles", sim.killsNeed ? sim.killsGot / sim.killsNeed : 0, null, null);
     return;
   }
   if (sim.sortieId === "riverpass") {
@@ -494,7 +510,7 @@ function tickFight(sim, player, dt) {
     return;
   }
   pinCraft(sim, player);
-  const text = sim.sortieId === "pair" ? "Two jets, east" : info.blurb;
+  const text = sim.sortieId === "pair" ? "Four jets, east" : info.blurb;
   setObj(sim, info.title, text, sim.killsNeed ? sim.killsGot / sim.killsNeed : 0, null, null);
 }
 
@@ -529,11 +545,8 @@ function tickVoice(sim, player) {
     } else if (!player.flying && kmh >= vr) {
       sim.cue = "Pull up";
       offer(sim, "pull", "Pull up.", 3);
-    } else if (player.flying && sim.step === "guns") {
-      sim.cue = player.weapon ? "Alt · gun" : "Guns · Space";
-      offer(sim, "guns", "Gun.", 3);
-    } else if (player.flying && sim.step === "lock") {
-      sim.cue = "Lock · Space";
+    } else if (player.flying && player.lock && player.weapon === 1 && (player.missiles ?? 0) > 0) {
+      sim.cue = "Shoot";
     } else sim.cue = "";
     return;
   }
@@ -556,7 +569,8 @@ function tickVoice(sim, player) {
       return;
     }
   }
-  sim.cue = "";
+  if (player.flying && !player.wrecked && player.lock && player.weapon === 1 && (player.missiles ?? 0) > 0) sim.cue = "Shoot";
+  else sim.cue = "";
 }
 
 function refreshCards(sim) {

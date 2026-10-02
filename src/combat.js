@@ -387,9 +387,10 @@ export function createCombat(scene, fields, elevation, wet = null) {
   }
 
   function spawnBandit(a, player, slot) {
-    const spot = eastOfKyiv(slot, 2);
-    a.x = spot.x;
-    a.z = spot.z + (slot === 0 ? -1600 : 1600);
+    const spot = eastOfKyiv(slot % 2, 2);
+    const side = (slot % 2 === 0 ? -1 : 1) * (1400 + Math.floor(slot / 2) * 1600);
+    a.x = spot.x - Math.floor(slot / 2) * 900;
+    a.z = spot.z + side;
     a.h = Math.atan2(player.x - a.x, player.z - a.z);
     a.agl = 420 + slot * 220;
     a.y = elevation(a.x, a.z) + a.agl;
@@ -414,7 +415,7 @@ export function createCombat(scene, fields, elevation, wet = null) {
     scene.add(mesh);
     craft.push({ id: 100 + i, mesh, role: "civil", kind: "air", vx: 0, vz: 0, vy: 0, alive: false, hp: 0, wait: 1e9, x: 0, y: 200, z: 0, h: 0 });
   }
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; i < 4; i++) {
     const mesh = fighterGroup();
     mesh.visible = false;
     scene.add(mesh);
@@ -1158,7 +1159,10 @@ export function createCombat(scene, fields, elevation, wet = null) {
           a.agl = a.holdAgl != null ? a.holdAgl : (a.fast ? 540 : 230);
           a.speed = a.pace;
           const gate = a.leave ? 700 : 320;
-          if (Math.hypot(wp.x - a.x, wp.z - a.z) < gate) a.leg += 1;
+          if (Math.hypot(wp.x - a.x, wp.z - a.z) < gate) {
+            a.leg += 1;
+            if (!a.leave && a.points && a.leg >= a.points.length) a.leg = 0;
+          }
         }
       } else {
         const wp = a.points && a.points[a.leg];
