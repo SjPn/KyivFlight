@@ -145,9 +145,9 @@ function wreckPlayer(player, world) {
 
 function landingStress(player, agl, onPad) {
   const sink = Math.max(0, -player.vy);
-  let stress = sink / 8;
+  let stress = sink / 10;
   const nose = Math.abs(wrapAngle(player.pitch));
-  if (nose > 0.2) stress = Math.max(stress, (nose - 0.2) / 0.5);
+  if (nose > 0.28) stress = Math.max(stress, (nose - 0.28) / 0.5);
   const bank = Math.abs(wrapAngle(player.roll));
   if (bank > 0.4) stress = Math.max(stress, 0.4 + (bank - 0.4) * 0.8);
   const kmh = Math.abs(player.speed) * 3.6;
@@ -324,10 +324,10 @@ function stepFlight(player, input, dt, world) {
       player.flaps = 0;
     }
     player.airTime = (player.airTime || 0) + dt;
-    if (!stalling && player.gearDown !== false && agl < 20 && agl > 0 && climb < -2.2) {
+    if (!stalling && player.gearDown !== false && agl < 35 && agl > 0 && climb < -2.2) {
       const pad = world.runway?.(player.x, player.z);
       if (pad) {
-        const blend = (1 - agl / 20) * 0.42;
+        const blend = (1 - agl / 35) * 0.6;
         climb += (-1.5 - climb) * blend;
       }
     }
