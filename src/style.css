@@ -251,7 +251,8 @@ html, body {
 .hud.hidden .leftcol, .hud.hidden .hint, .hud.hidden .place, .hud.hidden .crosshair, .hud.hidden .shoot, .hud.hidden .lockbox, .hud.hidden .lead, .hud.hidden .tags, .hud.hidden .deck { visibility: hidden; }
 .topbar { position: absolute; top: 1.6vh; left: 1.4vw; display: flex; gap: 6px; pointer-events: auto; z-index: 6; }
 .topbar .key { padding: 3px 8px 3px 3px; font-size: 11px; }
-.mission { position: absolute; top: 48px; left: 50%; transform: translateX(-50%); pointer-events: none; z-index: 4; max-width: 240px; }
+.mission { position: absolute; top: 1.6vh; right: 1.6vw; pointer-events: none; z-index: 4; max-width: 240px; text-align: right; }
+.mission .row { justify-content: flex-end; }
 .key, .mapkey, .legend button, .sheet button, .explore {
   pointer-events: auto;
   cursor: pointer;
@@ -619,8 +620,8 @@ html.mobile .manual { display: none !important; }
 html.mobile .leftcol { position: static; width: 0; height: 0; overflow: visible; }
 html.mobile .radar {
   position: absolute;
-  left: calc(env(safe-area-inset-left) + 36px);
-  bottom: calc(env(safe-area-inset-bottom) + 148px);
+  left: calc(env(safe-area-inset-left) + 18px);
+  bottom: calc(env(safe-area-inset-bottom) + 196px);
   width: 72px;
 }
 html.mobile .radar .scope { width: 72px; height: 72px; }
@@ -641,7 +642,6 @@ html.mobile .speed {
   row-gap: 1px;
   text-align: center;
 }
-html.mobile .mission:not(:has(.panel.off)) ~ .leftcol .speed { top: calc(env(safe-area-inset-top) + 92px); }
 html.mobile .speed .v { font-size: 22px; line-height: 1; }
 html.mobile .speed .street { display: none; }
 html.mobile .chips { justify-content: center; margin-top: 0; }
@@ -649,16 +649,21 @@ html.mobile .thr, html.mobile .land { width: 92px; margin-top: 0; }
 html.mobile .cue {
   position: absolute;
   top: auto;
-  bottom: calc(env(safe-area-inset-bottom) + 128px);
-  left: 118px;
-  transform: none;
+  bottom: calc(env(safe-area-inset-bottom) + 18px);
+  left: 50%;
+  transform: translateX(-50%);
   white-space: nowrap;
 }
 html.mobile .mission {
-  top: calc(env(safe-area-inset-top) + 42px);
-  max-width: min(190px, 30vw);
+  top: calc(env(safe-area-inset-top) + 6px);
+  left: auto;
+  right: calc(env(safe-area-inset-right) + 8px);
+  transform: none;
+  max-width: min(170px, 34vw);
+  text-align: right;
 }
 html.mobile .mission .panel { padding: 4px 8px; }
+html.mobile .mission .row { justify-content: flex-end; }
 html.mobile .banner { top: 42%; font-size: 15px; }
 html.mobile .toast { top: calc(42% + 26px); }
 html.mobile .hint {
@@ -669,8 +674,8 @@ html.mobile .hint {
   padding: 6px 12px;
 }
 html.mobile .deck {
-  right: calc(env(safe-area-inset-right) + 22px);
-  bottom: calc(env(safe-area-inset-bottom) + 176px);
+  right: calc(env(safe-area-inset-right) + 16px);
+  bottom: calc(env(safe-area-inset-bottom) + 128px);
   gap: 6px;
 }
 html.mobile .deck canvas { width: 64px; height: 64px; }
@@ -729,18 +734,47 @@ html.mobile .touch {
 html.mobile .touch .look { position: absolute; inset: 0; pointer-events: auto; touch-action: none; }
 html.mobile .touch .stick,
 html.mobile .touch .fight,
-html.mobile .touch .chrome,
+html.mobile .touch .menu-btn,
+html.mobile .touch .menu,
 html.mobile .touch .guide { pointer-events: auto; }
 html.mobile .touch.chart .look,
 html.mobile .touch.chart .stick,
 html.mobile .touch.chart .fight,
-html.mobile .touch.chart .chrome { visibility: hidden; pointer-events: none; }
+html.mobile .touch.chart .menu-btn,
+html.mobile .touch.chart .menu { visibility: hidden; pointer-events: none; }
+html.mobile .touch .menu-btn {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + 6px);
+  left: calc(env(safe-area-inset-left) + 8px);
+  z-index: 3;
+  min-width: 64px;
+  min-height: 34px;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+html.mobile .touch .menu {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + 46px);
+  left: calc(env(safe-area-inset-left) + 8px);
+  z-index: 3;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  width: 188px;
+  padding: 8px;
+  border-radius: 12px;
+  background: #0c101ae8;
+  border: 1px solid #ffffff30;
+}
+html.mobile .touch .menu.off { display: none; }
+html.mobile .touch .menu .wpn { grid-column: 1 / -1; }
 html.mobile .touch .stick {
   position: absolute;
-  left: calc(env(safe-area-inset-left) + 16px);
-  bottom: calc(env(safe-area-inset-bottom) + 12px);
-  width: 124px;
-  height: 124px;
+  left: calc(env(safe-area-inset-left) + 12px);
+  bottom: calc(env(safe-area-inset-bottom) + 10px);
+  z-index: 2;
+  width: 168px;
+  height: 168px;
   border-radius: 50%;
   background: #0c101a73;
   border: 2px solid #ffffff38;
@@ -751,9 +785,9 @@ html.mobile .touch .stick i {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 46px;
-  height: 46px;
-  margin: -23px;
+  width: 28px;
+  height: 28px;
+  margin: -14px;
   border-radius: 50%;
   border: 1px solid #ffffff24;
 }
@@ -761,28 +795,28 @@ html.mobile .touch .stick b {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 54px;
-  height: 54px;
-  margin: -27px;
+  width: 48px;
+  height: 48px;
+  margin: -24px;
   border-radius: 50%;
   background: #f2c14ecc;
   box-shadow: 0 6px 16px #0008;
 }
 html.mobile .touch .fight {
   position: absolute;
-  right: calc(env(safe-area-inset-right) + 12px);
-  bottom: calc(env(safe-area-inset-bottom) + 12px);
+  right: calc(env(safe-area-inset-right) + 10px);
+  bottom: calc(env(safe-area-inset-bottom) + 10px);
+  z-index: 2;
   display: grid;
-  grid-template-columns: 62px 74px;
-  grid-template-areas: "up gun" "down flare" "fire fire";
-  gap: 8px;
+  grid-template-columns: 64px 86px;
+  grid-template-areas: "up fire" "down flare";
+  gap: 6px;
   touch-action: none;
 }
 html.mobile .touch .fight .up { grid-area: up; }
-html.mobile .touch .fight .wpn { grid-area: gun; }
 html.mobile .touch .fight .down { grid-area: down; }
-html.mobile .touch .fight .flare { grid-area: flare; }
-html.mobile .touch .fight .fire { grid-area: fire; min-height: 64px; background: #ff4b1fdd; color: #fff; border-color: #ffb4a8; }
+html.mobile .touch .fight .flare { grid-area: flare; min-height: 40px; font-size: 11px; }
+html.mobile .touch .fight .fire { grid-area: fire; min-height: 48px; background: #ff4b1fdd; color: #fff; border-color: #ffb4a8; }
 html.mobile .touch button {
   min-height: 48px;
   padding: 6px 8px;
@@ -798,26 +832,8 @@ html.mobile .touch button.on,
 html.mobile .touch .fight button.on { background: #f2c14e; color: #1a1408; border-color: #f2c14e; }
 html.mobile .touch button { -webkit-tap-highlight-color: transparent; }
 html.mobile .touch button.dim { opacity: .5; }
-html.mobile .touch .chrome {
-  position: absolute;
-  top: env(safe-area-inset-top);
-  left: env(safe-area-inset-left);
-  right: env(safe-area-inset-right);
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 4px;
-}
-html.mobile .touch .cluster { display: flex; gap: 4px; }
-html.mobile .touch .chrome button {
-  min-width: 46px;
-  min-height: 36px;
-  padding: 4px 6px;
-  font-size: 10px;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-}
-html.mobile .touch .chrome button.on { background: #f2c14e; color: #1a1408; }
+html.mobile .touch .menu-btn.on,
+html.mobile .touch .menu button.on { background: #f2c14e; color: #1a1408; }
 html.mobile .touch .guide {
   position: absolute;
   inset: 0;
@@ -859,11 +875,11 @@ html.mobile .touch .guide .close { width: 100%; }
   }
 }
 @media (max-height: 420px) {
-  html.mobile .touch .stick { width: 108px; height: 108px; }
-  html.mobile .touch .stick b { width: 46px; height: 46px; margin: -23px; }
-  html.mobile .radar { bottom: calc(env(safe-area-inset-bottom) + 128px); }
-  html.mobile .deck { bottom: calc(env(safe-area-inset-bottom) + 172px); }
-  html.mobile .touch .fight { grid-template-columns: 54px 68px; gap: 6px; }
-  html.mobile .touch .fight .fire { min-height: 52px; }
-  html.mobile .touch button { min-height: 42px; }
+  html.mobile .touch .stick { width: 148px; height: 148px; }
+  html.mobile .touch .stick b { width: 44px; height: 44px; margin: -22px; }
+  html.mobile .radar { bottom: calc(env(safe-area-inset-bottom) + 172px); }
+  html.mobile .deck { bottom: calc(env(safe-area-inset-bottom) + 112px); }
+  html.mobile .touch .fight { grid-template-columns: 56px 76px; }
+  html.mobile .touch .fight .flare { min-height: 36px; }
+  html.mobile .touch button { min-height: 40px; }
 }

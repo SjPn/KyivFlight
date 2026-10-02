@@ -4,9 +4,9 @@ import { readElev } from "./elev.js";
 import { clearPlazas, indexCity, nearestRoad, onRoad, openStreets, presentEast } from "./geo.js?v=70";
 import { decodeCity } from "./mapio.js?v=2";
 import { FIELDS, fieldAt, nearestField, runwayStart } from "./airfields.js?v=2";
-import { createPlayer, resetPlayer, updatePlayer } from "./player.js?v=88";
+import { createPlayer, resetPlayer, updatePlayer } from "./player.js?v=89";
 import { armSortie, clearRetry, createSim, nearestSight, pickSortie, restartSortie, retryHint, updateSim } from "./sim.js?v=68";
-import { isPhone, mountTouch } from "./touch.js?v=4";
+import { isPhone, mountTouch, touchAxes } from "./touch.js?v=5";
 import { createUI } from "./ui.js?v=96";
 import { createWorld } from "./world.js?v=120";
 
@@ -267,6 +267,7 @@ function readInput(player, mapOpen = false) {
       noseDown: keys.has("KeyW") || !!gp?.buttons[0]?.pressed,
       fire: keys.has("Space") || !!gp?.buttons[1]?.pressed,
       flare: keys.has("KeyC") || !!gp?.buttons[5]?.pressed,
+      stick: touchAxes(),
       manual: true,
     };
   }

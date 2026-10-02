@@ -14,7 +14,19 @@ export function isPhone() {
   return phone;
 }
 
-const DZ = 0.25;
+const DEAD = 0.1;
+let axes = null;
+
+function soften(v) {
+  const a = Math.abs(v);
+  if (a <= DEAD) return 0;
+  const t = Math.min(1, (a - DEAD) / (1 - DEAD));
+  return Math.sign(v) * Math.pow(t, 1.65);
+}
+
+export function touchAxes() {
+  return axes;
+}
 
 export function mountTouch({ keys, unlock }) {
   if (!isPhone() || document.querySelector(".touch")) return;
@@ -23,32 +35,29 @@ export function mountTouch({ keys, unlock }) {
   root.className = "touch";
   root.innerHTML = `
     <div class="look"></div>
+    <button type="button" class="menu-btn" data-tap="menu">Menu</button>
+    <div class="menu off">
+      <button type="button" data-tap="map">Chart</button>
+      <button type="button" data-tap="KeyG">Gear</button>
+      <button type="button" data-tap="KeyF">Flaps</button>
+      <button type="button" data-tap="CapsLock">Jet</button>
+      <button type="button" data-tap="KeyV">View</button>
+      <button type="button" data-tap="KeyB">Base</button>
+      <button type="button" data-tap="voice">Voice</button>
+      <button type="button" class="help" data-tap="help">Help</button>
+      <button type="button" class="wpn">MSL</button>
+    </div>
     <div class="stick" aria-hidden="true"><i></i><b></b></div>
     <div class="fight">
       <button type="button" class="up" data-hold="Equal">+</button>
-      <button type="button" class="wpn">MSL</button>
       <button type="button" class="down" data-hold="Minus">−</button>
-      <button type="button" class="flare" data-hold="KeyC">Flares</button>
       <button type="button" class="fire" data-hold="Space">Fire</button>
-    </div>
-    <div class="chrome">
-      <div class="cluster">
-        <button type="button" data-tap="map">Chart</button>
-        <button type="button" data-tap="KeyG">Gear</button>
-        <button type="button" data-tap="KeyF">Flaps</button>
-        <button type="button" data-tap="CapsLock">Jet</button>
-      </div>
-      <div class="cluster">
-        <button type="button" data-tap="KeyV">View</button>
-        <button type="button" data-tap="KeyB">Base</button>
-        <button type="button" data-tap="voice">Voice</button>
-        <button type="button" class="help" data-tap="help">Help</button>
-      </div>
+      <button type="button" class="flare" data-hold="KeyC">Flares</button>
     </div>
     <div class="guide off">
       <div class="card">
         <h4>CONTROLS</h4>
-        <p>Pull the stick back to raise the nose. Push it forward to lower the nose. Left and right roll.</p>
+        <p>Pull the stick back to raise the nose. A small move is a small input. Full roll is at the edge. Menu holds chart, gear, flaps, and the rest.</p>
         <p>+ and − add and reduce thrust. It stays when you let go.</p>
         <p>Fire is held. Gun / Msl switches weapons. Flares drops a pair.</p>
         <p>Drag a finger on the empty sky to look around. The view stays where you leave it.</p>
@@ -67,6 +76,8 @@ export function mountTouch({ keys, unlock }) {
   const nub = stick.querySelector("b");
   const look = root.querySelector(".look");
   const guide = root.querySelector(".guide");
+  const menu = root.querySelector(".menu");
+  const menuBtn = root.querySelector(".menu-btn");
   const wpn = root.querySelector(".wpn");
   let stickId = null;
   let lookId = null;
@@ -87,6 +98,7 @@ export function mountTouch({ keys, unlock }) {
     owned.clear();
     stickId = null;
     lookId = null;
+    axes = null;
     nub.style.transform = "";
     root.querySelectorAll(".fight button.on, .stick.on").forEach((el) => el.classList.remove("on"));
   }
@@ -102,7 +114,19 @@ export function mountTouch({ keys, unlock }) {
     hudBtn(sel)?.click();
   }
 
+  function closeMenu() {
+    menu.classList.add("off");
+    menuBtn.classList.remove("on");
+  }
+
   function runTap(name) {
+    if (name === "menu") {
+      unlock();
+      const open = menu.classList.toggle("off") === false;
+      menuBtn.classList.toggle("on", open);
+      return;
+    }
+    closeMenu();
     if (name === "map") clickHud("[data-act=map]");
     else if (name === "voice") {
       clickHud("[data-act=voice]");
@@ -157,13 +181,16 @@ export function mountTouch({ keys, unlock }) {
     });
   };
   root.querySelectorAll("[data-tap]").forEach((btn) => tapBtn(btn, () => runTap(btn.dataset.tap)));
-  tapBtn(wpn, () => tapKey("AltLeft"));
+  tapBtn(wpn, () => {
+    closeMenu();
+    tapKey("AltLeft");
+  });
 
   function placeStick(e) {
     const rect = stick.getBoundingClientRect();
     const cx = rect.left + rect.width / 2;
     const cy = rect.top + rect.height / 2;
-    const max = rect.width * 0.28;
+    const max = Math.max(36, rect.width * 0.5 - nub.offsetWidth * 0.5 - 8);
     let dx = e.clientX - cx;
     let dy = e.clientY - cy;
     const mag = Math.hypot(dx, dy) || 1;
@@ -174,10 +201,7 @@ export function mountTouch({ keys, unlock }) {
     nub.style.transform = `translate(${dx}px, ${dy}px)`;
     const nx = dx / max;
     const ny = dy / max;
-    setHeld("KeyA", nx < -DZ);
-    setHeld("KeyD", nx > DZ);
-    setHeld("KeyW", ny < -DZ);
-    setHeld("KeyS", ny > DZ);
+    axes = { x: -soften(nx), y: soften(ny) };
   }
 
   stick.addEventListener("pointerdown", (e) => {
@@ -199,10 +223,7 @@ export function mountTouch({ keys, unlock }) {
     stickId = null;
     stick.classList.remove("on");
     nub.style.transform = "";
-    setHeld("KeyA", false);
-    setHeld("KeyD", false);
-    setHeld("KeyW", false);
-    setHeld("KeyS", false);
+    axes = null;
   };
   stick.addEventListener("pointerup", endStick);
   stick.addEventListener("pointercancel", endStick);
@@ -243,7 +264,7 @@ export function mountTouch({ keys, unlock }) {
   const syncHelp = () => {
     const on = !!helpBtn?.classList.contains("act");
     guide.classList.toggle("off", !on);
-    root.querySelector(".chrome .help")?.classList.toggle("on", on);
+    root.querySelector(".menu .help")?.classList.toggle("on", on);
   };
   if (manual) new MutationObserver(syncHelp).observe(manual, { attributes: true, attributeFilter: ["class"] });
   if (helpBtn) new MutationObserver(syncHelp).observe(helpBtn, { attributes: true, attributeFilter: ["class"] });
@@ -261,7 +282,10 @@ export function mountTouch({ keys, unlock }) {
   const syncMap = () => {
     const open = map && !map.classList.contains("off");
     root.classList.toggle("chart", !!open);
-    if (open) releaseAll();
+    if (open) {
+      closeMenu();
+      releaseAll();
+    }
   };
   if (map) new MutationObserver(syncMap).observe(map, { attributes: true, attributeFilter: ["class"] });
 

@@ -187,7 +187,9 @@ function stepFlight(player, input, dt, world) {
   const stall = (flap ? 60 : 130) / 3.6;
   const rotate = (flap ? 75 : 150) / 3.6;
   const ground = () => world.surface(player.x, player.z, player.y);
-  const steer = (input.left ? 1 : 0) - (input.right ? 1 : 0);
+  const stick = input.stick || null;
+  const steer = stick ? stick.x : (input.left ? 1 : 0) - (input.right ? 1 : 0);
+  const nose = stick ? stick.y : (input.noseUp ? 1 : 0) - (input.noseDown ? 1 : 0);
   if (!player.flying) {
     player.spin = 0;
     player.stallAge = 0;
@@ -206,13 +208,13 @@ function stepFlight(player, input, dt, world) {
     player.wheel += (steer - player.wheel) * wheelK;
     const steerRate = Math.min(0.62, 0.1 + player.speed * 0.004);
     if (player.speed > 2) player.heading += player.wheel * dt * steerRate;
-    const wantRotate = player.speed > rotate * 0.9 && input.noseUp ? 1 : 0;
+    const wantRotate = player.speed > rotate * 0.9 && (stick ? nose > 0.55 : input.noseUp) ? 1 : 0;
     player.rotate = (player.rotate || 0) + (wantRotate - (player.rotate || 0)) * Math.min(1, dt * 2.4);
     player.pitch = player.rotate * (flap ? 0.2 : 0.15);
     player.roll += (0 - (player.roll || 0)) * Math.min(1, dt * 4);
     player.vy = 0;
     player.airTime = 0;
-    player.noseSm = (input.noseUp ? 1 : 0) - (input.noseDown ? 1 : 0);
+    player.noseSm = nose;
     player.rollSm = steer;
     player.x += Math.sin(player.heading) * player.speed * dt;
     player.z += Math.cos(player.heading) * player.speed * dt;
@@ -248,7 +250,7 @@ function stepFlight(player, input, dt, world) {
     player.speed -= drag * dt;
     player.speed -= (1 - player.throttle) * 5 * dt;
     player.speed -= 9.81 * gamma * dt;
-    const pull = Math.abs((input.noseUp ? 1 : 0) - (input.noseDown ? 1 : 0));
+    const pull = Math.abs(nose);
     const rollIn = Math.abs(steer);
     const bank = Math.min(1, Math.abs(Math.sin(player.roll || 0)));
     const gLoad = Math.min(1.65, pull * 1.05 + bank * (0.4 + pull * 0.65) + rollIn * 0.2);
@@ -271,7 +273,6 @@ function stepFlight(player, input, dt, world) {
       player.stallAge = 0;
     }
     const stalling = slow || !!player.spin;
-    const nose = (input.noseUp ? 1 : 0) - (input.noseDown ? 1 : 0);
     const rollInput = steer;
     const noseK = 1 - Math.exp(-dt * 3.4);
     const rollK = 1 - Math.exp(-dt * 2.8);
