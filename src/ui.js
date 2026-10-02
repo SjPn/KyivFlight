@@ -194,6 +194,7 @@ export function createUI(city, index) {
         <div>
           <section><h5>Fight</h5>
             ${row(kbd("Space"), "Fire")}
+            ${row(kbd("Tab"), "Next target")}
             ${row(kbd("Alt"), "Missiles / gun")}
             ${row(kbd("C"), "Flares")}
           </section>
@@ -951,13 +952,14 @@ export function createUI(city, index) {
       if (cross) cross.classList.toggle("lock", !!player.lock);
       const shoot = $(".shoot");
       if (shoot) {
-        const show = player.flying && !player.wrecked && player.lock && player.weapon === 1 && (player.missiles ?? 0) > 0;
+        const show = player.flying && !player.wrecked && player.fixed && (player.missiles ?? 0) > 0;
         shoot.classList.toggle("off", !show);
       }
       const box = $(".lockbox");
       if (box) {
         if (frame.lockScreen) {
           box.classList.remove("off");
+          box.classList.toggle("fixed", !!player.fixed);
           box.style.left = frame.lockScreen.x + "px";
           box.style.top = frame.lockScreen.y + "px";
           const em = box.querySelector("em");
@@ -969,7 +971,10 @@ export function createUI(city, index) {
                 ? (range / 1000).toFixed(1) + " km"
                 : Math.round(range) + " m");
           }
-        } else box.classList.add("off");
+        } else {
+          box.classList.add("off");
+          box.classList.remove("fixed");
+        }
       }
       const lead = $(".lead");
       if (lead) {

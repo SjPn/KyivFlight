@@ -6,6 +6,7 @@ const GUN_GAP = 0.07;
 const MISSILE_GAP = 1.05;
 const MISSILE_SPEED = 720;
 const LOCK_RANGE = 15000;
+const SEEKER = Math.cos((8 * Math.PI) / 180);
 const COLORS = [0xf7f4ee, 0xf2c14e, 0xe4453a, 0x7ec8ea, 0xf28a2e, 0xc6ef7a, 0xe7c2ef, 0xffffff];
 
 const _dir = new THREE.Vector3();
@@ -682,19 +683,39 @@ export function createCombat(scene, fields, elevation, wet = null, railAt = null
     return best;
   }
 
-  function nearestAir(origin) {
-    let best = null;
-    let bestD = LOCK_RANGE;
+  function hostilesInRange(origin) {
+    const list = [];
     for (const t of craft) {
       if (!t.alive || !isHostile(t)) continue;
       const dist = Math.hypot(t.x - origin.x, t.y - origin.y, t.z - origin.z);
       if (dist < 40 || dist > LOCK_RANGE) continue;
-      if (dist < bestD) {
-        best = t;
-        bestD = dist;
-      }
+      list.push({ t, dist });
     }
-    return best;
+    list.sort((a, b) => a.dist - b.dist);
+    return list;
+  }
+
+  let designated = null;
+
+  function designate(origin, cycle) {
+    const list = hostilesInRange(origin);
+    if (cycle) {
+      if (list.length) {
+        const i = list.findIndex((row) => row.t === designated);
+        designated = list[(i + 1) % list.length].t;
+      } else designated = null;
+    } else if (!list.some((row) => row.t === designated)) {
+      designated = list[0]?.t || null;
+    }
+    return designated;
+  }
+
+  function onNose(aim, target) {
+    const dx = target.x - aim.x;
+    const dy = target.y + 1.2 - aim.y;
+    const dz = target.z - aim.z;
+    const dist = Math.hypot(dx, dy, dz) || 1;
+    return (aim.dx * dx + aim.dy * dy + aim.dz * dz) / dist > SEEKER;
   }
 
   function puff(x, y, z, big, trail, tire) {
@@ -902,9 +923,12 @@ export function createCombat(scene, fields, elevation, wet = null, railAt = null
     gunT = Math.max(0, gunT - dt);
     missileT = Math.max(0, missileT - dt);
     const aim = nose(player);
-    const locked = nearestAir(player);
+    const cycle = !!player.cycleLock;
+    player.cycleLock = false;
+    const locked = designate(player, cycle);
     player.lock = !!locked;
     player.lockPos = locked ? { x: locked.x, y: locked.y + 2.2, z: locked.z } : null;
+    player.fixed = !!(locked && player.weapon === 1 && onNose(aim, locked));
 
     if (input.fire && player.weapon !== 1 && gunT <= 0) {
       if ((player.rounds ?? 0) <= 0) {
@@ -962,7 +986,7 @@ export function createCombat(scene, fields, elevation, wet = null, railAt = null
         slot.dy = aim.dy;
         slot.dz = aim.dz;
         slot.kick = 0.22;
-        slot.target = locked;
+        slot.target = player.fixed ? locked : null;
         slot.smoke = 0;
         slot.mesh.visible = true;
       }

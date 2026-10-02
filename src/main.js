@@ -5,10 +5,10 @@ import { clearPlazas, indexCity, nearestRoad, onRoad, openStreets, presentEast }
 import { decodeCity } from "./mapio.js?v=2";
 import { FIELDS, fieldAt, nearestField, runwayStart } from "./airfields.js?v=2";
 import { createPlayer, resetPlayer, updatePlayer } from "./player.js?v=93";
-import { armSortie, clearRetry, createSim, nearestSight, pickSortie, restartSortie, retryHint, updateSim } from "./sim.js?v=68";
+import { armSortie, clearRetry, createSim, nearestSight, pickSortie, restartSortie, retryHint, updateSim } from "./sim.js?v=69";
 import { isPhone, mountTouch, touchAxes } from "./touch.js?v=5";
-import { createUI } from "./ui.js?v=98";
-import { createWorld } from "./world.js?v=125";
+import { createUI } from "./ui.js?v=99";
+import { createWorld } from "./world.js?v=126";
 
 const app = document.querySelector("#app");
 const loading = document.querySelector("#loading");
@@ -219,7 +219,7 @@ window.addEventListener("keydown", (e) => {
   }
   if (e.repeat) return;
   keys.add(e.code);
-  if (chord || ["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Equal", "Minus", "NumpadAdd", "NumpadSubtract", "KeyW", "KeyA", "KeyS", "KeyD", "KeyC", "KeyF", "KeyG", "AltLeft", "AltRight", "ControlLeft", "ControlRight", "CapsLock"].includes(e.code)) e.preventDefault();
+  if (chord || ["Tab", "Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Equal", "Minus", "NumpadAdd", "NumpadSubtract", "KeyW", "KeyA", "KeyS", "KeyD", "KeyC", "KeyF", "KeyG", "AltLeft", "AltRight", "ControlLeft", "ControlRight", "CapsLock"].includes(e.code)) e.preventDefault();
 }, true);
 window.addEventListener("keyup", (e) => keys.delete(e.code));
 window.addEventListener("blur", () => keys.clear());
@@ -471,6 +471,7 @@ async function boot() {
     }
     if (e.code === "KeyB" || e.code === "Home") parkPlane(homeField);
     if (e.code === "KeyR") parkPlane(nearestField(city.fields, player.x, player.z));
+    if (e.code === "Tab" && !ui.mapOpen) player.cycleLock = true;
     if (e.code === "KeyV") cabin = !cabin;
     if (e.code === "KeyT") {
       world.setTime(world.time + 1);
@@ -543,7 +544,7 @@ async function boot() {
 
   let last = performance.now();
   let hadLock = false;
-  let lockSay = 0;
+  let hadFixed = false;
   let wasWreck = false;
   let wasSpin = false;
   let stallT = 0;
@@ -596,15 +597,11 @@ async function boot() {
       if (fx.missile) audio.callout(foxLine(player.shotRange), 3);
       if (fx.flare) audio.flare();
       if (fx.boom) audio.boom();
-      if (player.flying && !player.wrecked && player.lock) {
-        if (!hadLock) {
-          audio.lock();
-          lockSay = 0;
-        }
-        lockSay -= dt;
-        if (lockSay <= 0) lockSay = audio.callout("Target locked.", 2) ? 5 : 1.2;
-      } else lockSay = 0;
-      hadLock = !!player.lock;
+      if (player.flying && !player.wrecked && player.lock && !hadLock) audio.lock();
+      hadLock = !!(player.flying && !player.wrecked && player.lock);
+      const fixing = player.flying && !player.wrecked && player.fixed && (player.missiles ?? 0) > 0;
+      if (fixing && !hadFixed) audio.callout("Target locked.", 3);
+      hadFixed = fixing;
       if (player.stallWarn || player.stalling) {
         stallT -= dt;
         if (stallT <= 0) {

@@ -444,6 +444,17 @@ html, body {
   pointer-events: none;
 }
 .lockbox.off, .lead.off { display: none; }
+.lockbox.fixed::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: -8px;
+  right: -8px;
+  bottom: -8px;
+  border: 2px solid #ff3b30;
+  box-shadow: 0 0 10px #ff3b30aa;
+}
+.lockbox.fixed em { margin-bottom: 14px; }
 .lockbox em {
   position: absolute;
   left: 50%;

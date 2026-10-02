@@ -545,7 +545,7 @@ function tickVoice(sim, player) {
     } else if (!player.flying && kmh >= vr) {
       sim.cue = "Pull up";
       offer(sim, "pull", "Pull up.", 3);
-    } else if (player.flying && player.lock && player.weapon === 1 && (player.missiles ?? 0) > 0) {
+    } else if (player.flying && player.fixed && (player.missiles ?? 0) > 0) {
       sim.cue = "Shoot";
     } else sim.cue = "";
     return;
@@ -569,7 +569,7 @@ function tickVoice(sim, player) {
       return;
     }
   }
-  if (player.flying && !player.wrecked && player.lock && player.weapon === 1 && (player.missiles ?? 0) > 0) sim.cue = "Shoot";
+  if (player.flying && !player.wrecked && player.fixed && (player.missiles ?? 0) > 0) sim.cue = "Shoot";
   else sim.cue = "";
 }
 
