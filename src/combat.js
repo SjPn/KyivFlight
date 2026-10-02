@@ -156,7 +156,7 @@ function pointAlong(mesh, x, y, z, dx, dy, dz) {
   mesh.quaternion.setFromUnitVectors(_z, _dir);
 }
 
-export function createCombat(scene, fields, elevation, wet = null) {
+export function createCombat(scene, fields, elevation, wet = null, railAt = null) {
   const craft = [];
   const parked = [];
   const dummy = new THREE.Object3D();
@@ -460,7 +460,7 @@ export function createCombat(scene, fields, elevation, wet = null) {
     mesh.userData.flame = flame;
     mesh.visible = false;
     scene.add(mesh);
-    missiles.push({ mesh, life: 0, x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1, target: null, smoke: 0 });
+    missiles.push({ mesh, life: 0, x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1, target: null, smoke: 0, kick: 0 });
   }
 
   const smokes = [];
@@ -954,12 +954,14 @@ export function createCombat(scene, fields, elevation, wet = null) {
         fx.shot = true;
         fx.missile = true;
         slot.life = 26;
-        slot.x = aim.x;
-        slot.y = aim.y;
-        slot.z = aim.z;
+        const from = railAt?.(player.missiles, player);
+        slot.x = from ? from.x : aim.x;
+        slot.y = from ? from.y : aim.y;
+        slot.z = from ? from.z : aim.z;
         slot.dx = aim.dx;
         slot.dy = aim.dy;
         slot.dz = aim.dz;
+        slot.kick = 0.22;
         slot.target = locked;
         slot.smoke = 0;
         slot.mesh.visible = true;
@@ -1005,9 +1007,11 @@ export function createCombat(scene, fields, elevation, wet = null) {
           m.life = 0;
         }
       }
-      m.x += m.dx * MISSILE_SPEED * dt;
-      m.y += m.dy * MISSILE_SPEED * dt;
-      m.z += m.dz * MISSILE_SPEED * dt;
+      const speed = m.kick > 0 ? 120 + (1 - m.kick / 0.22) * (MISSILE_SPEED - 120) : MISSILE_SPEED;
+      if (m.kick > 0) m.kick = Math.max(0, m.kick - dt);
+      m.x += m.dx * speed * dt;
+      m.y += m.dy * speed * dt;
+      m.z += m.dz * speed * dt;
       if (!m.target) {
         const bump = rayHit(m.x, m.y, m.z, m.dx, m.dy, m.dz, 24, 12);
         if (bump) {

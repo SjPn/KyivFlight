@@ -192,6 +192,7 @@ function stepFlight(player, input, dt, world) {
   const stick = input.stick || null;
   const steer = stick ? stick.x : (input.left ? 1 : 0) - (input.right ? 1 : 0);
   const nose = stick ? stick.y : (input.noseUp ? 1 : 0) - (input.noseDown ? 1 : 0);
+  const rudder = (input.yawLeft ? 1 : 0) - (input.yawRight ? 1 : 0);
   if (!player.flying) {
     player.spin = 0;
     player.stallAge = 0;
@@ -218,6 +219,7 @@ function stepFlight(player, input, dt, world) {
     player.airTime = 0;
     player.noseSm = nose;
     player.rollSm = steer;
+    player.rudderSm = (player.rudderSm || 0) * Math.max(0, 1 - dt * 6);
     player.x += Math.sin(player.heading) * player.speed * dt;
     player.z += Math.cos(player.heading) * player.speed * dt;
     const groundHit = slideBuildings(player, world);
@@ -280,6 +282,8 @@ function stepFlight(player, input, dt, world) {
     const rollK = 1 - Math.exp(-dt * 2.8);
     player.noseSm = (player.noseSm || 0) + (nose - (player.noseSm || 0)) * noseK;
     player.rollSm = (player.rollSm || 0) + (rollInput - (player.rollSm || 0)) * rollK;
+    const rudderK = 1 - Math.exp(-dt * 8);
+    player.rudderSm = (player.rudderSm || 0) + (rudder - (player.rudderSm || 0)) * rudderK;
     const noseCmd = player.noseSm;
     const rollCmd = player.rollSm;
     const auth = Math.min(1.15, 0.5 + player.speed / 160);
@@ -302,6 +306,7 @@ function stepFlight(player, input, dt, world) {
       const aimed = oriAxis(player, 0, 0, 1);
       const bank = Math.atan2(-right.y, up.y);
       oriRotateWorld(player, 0, 1, 0, Math.sin(bank) * 0.82 * dt * Math.max(0.3, Math.hypot(aimed.x, aimed.z)));
+      oriRotateWorld(player, 0, 1, 0, -(player.rudderSm || 0) * 0.35 * dt);
     }
     const aimed = oriAxis(player, 0, 0, 1);
     const lifted = oriAxis(player, 0, 1, 0);

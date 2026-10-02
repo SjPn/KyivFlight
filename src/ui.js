@@ -178,6 +178,7 @@ export function createUI(city, index) {
             ${row(kbd("+") + kbd("−"), "Thrust. It stays")}
             ${row(kbd("W") + kbd("S"), "Nose up / down")}
             ${row(kbd("A") + kbd("D"), "Roll")}
+            ${row(kbd("←") + kbd("→"), "Rudder")}
             ${row(kbd("Caps"), "Afterburner")}
             ${row(kbd("F"), "Flaps")}
             ${row(kbd("G"), "Gear")}

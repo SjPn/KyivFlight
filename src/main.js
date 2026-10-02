@@ -4,11 +4,11 @@ import { readElev } from "./elev.js";
 import { clearPlazas, indexCity, nearestRoad, onRoad, openStreets, presentEast } from "./geo.js?v=70";
 import { decodeCity } from "./mapio.js?v=2";
 import { FIELDS, fieldAt, nearestField, runwayStart } from "./airfields.js?v=2";
-import { createPlayer, resetPlayer, updatePlayer } from "./player.js?v=91";
+import { createPlayer, resetPlayer, updatePlayer } from "./player.js?v=92";
 import { armSortie, clearRetry, createSim, nearestSight, pickSortie, restartSortie, retryHint, updateSim } from "./sim.js?v=68";
 import { isPhone, mountTouch, touchAxes } from "./touch.js?v=5";
-import { createUI } from "./ui.js?v=96";
-import { createWorld } from "./world.js?v=121";
+import { createUI } from "./ui.js?v=97";
+import { createWorld } from "./world.js?v=124";
 
 const app = document.querySelector("#app");
 const loading = document.querySelector("#loading");
@@ -267,6 +267,8 @@ function readInput(player, mapOpen = false) {
       noseDown: keys.has("KeyW") || !!gp?.buttons[0]?.pressed,
       fire: keys.has("Space") || !!gp?.buttons[1]?.pressed,
       flare: keys.has("KeyC") || !!gp?.buttons[5]?.pressed,
+      yawLeft: !mapOpen && keys.has("ArrowLeft"),
+      yawRight: !mapOpen && keys.has("ArrowRight"),
       stick: touchAxes(),
       manual: true,
     };
