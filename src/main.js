@@ -4,7 +4,7 @@ import { readElev } from "./elev.js";
 import { clearPlazas, indexCity, nearestRoad, onRoad, openStreets, presentEast } from "./geo.js?v=70";
 import { decodeCity } from "./mapio.js?v=2";
 import { FIELDS, fieldAt, nearestField, runwayStart } from "./airfields.js?v=2";
-import { createPlayer, resetPlayer, updatePlayer } from "./player.js?v=92";
+import { createPlayer, resetPlayer, updatePlayer } from "./player.js?v=93";
 import { armSortie, clearRetry, createSim, nearestSight, pickSortie, restartSortie, retryHint, updateSim } from "./sim.js?v=68";
 import { isPhone, mountTouch, touchAxes } from "./touch.js?v=5";
 import { createUI } from "./ui.js?v=98";

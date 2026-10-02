@@ -192,7 +192,7 @@ function stepFlight(player, input, dt, world) {
   const stick = input.stick || null;
   const steer = stick ? stick.x : (input.left ? 1 : 0) - (input.right ? 1 : 0);
   const nose = stick ? stick.y : (input.noseUp ? 1 : 0) - (input.noseDown ? 1 : 0);
-  const rudder = (input.yawLeft ? 1 : 0) - (input.yawRight ? 1 : 0);
+  const rudder = (input.yawRight ? 1 : 0) - (input.yawLeft ? 1 : 0);
   if (!player.flying) {
     player.spin = 0;
     player.stallAge = 0;
