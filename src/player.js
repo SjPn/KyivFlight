@@ -72,6 +72,8 @@ export function resetPlayer(player, spawn) {
   player.wrecked = false;
   player.wreckShown = false;
   player.landStress = 0;
+  player.touched = false;
+  player.touchSmoke = 0;
   player.parked = true;
   player.parkX = spawn.x;
   player.parkZ = spawn.z;
@@ -355,6 +357,10 @@ function stepFlight(player, input, dt, world) {
       player.spin = 0;
       player.gearDown = true;
       player.landStress = 0;
+      player.touched = true;
+      player.touchFirm = player.lastTouch || 0;
+      player.touchSmoke = 1;
+      player.touchClock = 0;
       player.rotate = Math.max(0, Math.min(1, player.pitch / (flap ? 0.2 : 0.15)));
       player.roll *= 0.55;
       player.noseSm = 0;

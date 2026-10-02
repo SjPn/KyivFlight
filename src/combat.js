@@ -697,21 +697,22 @@ export function createCombat(scene, fields, elevation, wet = null) {
     return best;
   }
 
-  function puff(x, y, z, big, trail) {
+  function puff(x, y, z, big, trail, tire) {
     for (const s of smokes) {
       if (s.life > 0) continue;
-      s.life = trail ? 3.2 : big ? 2.6 : 1.25;
+      s.life = tire ? 0.9 : trail ? 3.2 : big ? 2.6 : 1.25;
       s.max = s.life;
       s.x = x;
       s.y = y;
       s.z = z;
-      s.rise = trail ? 0.2 + Math.random() * 0.35 : big ? 7 + Math.random() * 6 : 1.5 + Math.random() * 2;
-      s.grow = trail ? 2.8 + Math.random() * 1.6 : big ? 10 + Math.random() * 8 : 2.4 + Math.random();
-      s.dense = trail ? 0.78 : big ? 0.58 : 0.4;
+      const bite = tire ? Math.max(0.2, Math.min(1, Number(tire) || 0.2)) : 0;
+      s.rise = tire ? 0.35 + Math.random() * 0.45 : trail ? 0.2 + Math.random() * 0.35 : big ? 7 + Math.random() * 6 : 1.5 + Math.random() * 2;
+      s.grow = tire ? 0.7 + bite * 1.3 : trail ? 2.8 + Math.random() * 1.6 : big ? 10 + Math.random() * 8 : 2.4 + Math.random();
+      s.dense = tire ? 0.14 + bite * 0.32 : trail ? 0.78 : big ? 0.58 : 0.4;
       s.mesh.visible = true;
-      s.mesh.material.color.setHex(trail ? (Math.random() < 0.45 ? 0x8e959c : 0xb7bec6) : big ? (Math.random() < 0.35 ? 0x4a4038 : 0x8d8680) : 0xe7ebf1);
+      s.mesh.material.color.setHex(tire ? 0xd5dbe3 : trail ? (Math.random() < 0.45 ? 0x8e959c : 0xb7bec6) : big ? (Math.random() < 0.35 ? 0x4a4038 : 0x8d8680) : 0xe7ebf1);
       s.mesh.material.opacity = s.dense;
-      s.mesh.scale.setScalar(trail ? 0.55 : 0.3);
+      s.mesh.scale.setScalar(tire ? 0.22 : trail ? 0.55 : 0.3);
       return;
     }
   }
@@ -1333,6 +1334,20 @@ export function createCombat(scene, fields, elevation, wet = null) {
     }
     player.warning = threat && player.flying;
     player.leadPos = leadOf(player);
+    if (player.touchSmoke > 0 && !player.flying && !player.wrecked) {
+      player.touchSmoke -= dt;
+      player.touchClock = (player.touchClock || 0) - dt;
+      if (player.touchClock <= 0) {
+        const firm = Math.max(0.22, Math.min(1, (player.touchFirm || 0) / 0.55));
+        player.touchClock = 0.14;
+        const hx = Math.sin(player.heading);
+        const hz = Math.cos(player.heading);
+        const rx = Math.cos(player.heading);
+        const rz = -Math.sin(player.heading);
+        puff(player.x - hx * 0.4 + rx * 1.15, player.y + 0.15, player.z - hz * 0.4 + rz * 1.15, false, false, firm);
+        puff(player.x - hx * 0.4 - rx * 1.15, player.y + 0.15, player.z - hz * 0.4 - rz * 1.15, false, false, firm);
+      }
+    }
     if (player.smokeT > 0 && (player.flying || player.wrecked)) {
       player.smokeT -= dt;
       player.smokeClock = (player.smokeClock || 0) - dt;

@@ -409,6 +409,35 @@ export function createAudio() {
       });
       return true;
     },
+    touch(firm = 0.3) {
+      ensure();
+      const now = ctx.currentTime;
+      const hard = Math.max(0.18, Math.min(1, firm || 0));
+      const src = burst(0.26 + hard * 0.2, 0.62);
+      const f = ctx.createBiquadFilter();
+      f.type = "bandpass";
+      f.Q.value = 5;
+      f.frequency.setValueAtTime(2100, now);
+      f.frequency.exponentialRampToValueAtTime(380, now + 0.22);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.06 + hard * 0.2, now);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.28 + hard * 0.12);
+      src.connect(f);
+      f.connect(g);
+      g.connect(master);
+      src.start(now);
+      const thud = burst(0.1, 0.92);
+      const low = ctx.createBiquadFilter();
+      low.type = "lowpass";
+      low.frequency.value = 280;
+      const tg = ctx.createGain();
+      tg.gain.setValueAtTime(0.08 + hard * 0.1, now);
+      tg.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+      thud.connect(low);
+      low.connect(tg);
+      tg.connect(master);
+      thud.start(now);
+    },
     horn() {
       ensure();
       const o = ctx.createOscillator();
