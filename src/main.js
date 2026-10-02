@@ -7,8 +7,8 @@ import { FIELDS, fieldAt, nearestField, runwayStart } from "./airfields.js?v=2";
 import { createPlayer, resetPlayer, updatePlayer } from "./player.js?v=92";
 import { armSortie, clearRetry, createSim, nearestSight, pickSortie, restartSortie, retryHint, updateSim } from "./sim.js?v=68";
 import { isPhone, mountTouch, touchAxes } from "./touch.js?v=5";
-import { createUI } from "./ui.js?v=97";
-import { createWorld } from "./world.js?v=124";
+import { createUI } from "./ui.js?v=98";
+import { createWorld } from "./world.js?v=125";
 
 const app = document.querySelector("#app");
 const loading = document.querySelector("#loading");
@@ -717,13 +717,13 @@ async function boot() {
     world.sync(player, sim, dt);
 
     const dist = cabin
-      ? 0.2
+      ? 3.4
       : player.flying
         ? 22 + Math.min(70, Math.abs(player.speed) * 0.1)
         : 16;
     const airView = player.flying || player.y - world.elevation(player.x, player.z) > 45;
     const far = airView ? 48000 : 9000;
-    const near = !airView ? 0.25 : cabin ? 0.05 : Math.min(6, Math.max(0.5, dist * 0.18));
+    const near = !airView ? 0.25 : cabin ? 0.2 : Math.min(6, Math.max(0.5, dist * 0.18));
     if (camera.far !== far || camera.near !== near) {
       camera.near = near;
       camera.far = far;
@@ -732,7 +732,7 @@ async function boot() {
 
     bodyQuat.set(player.qx || 0, player.qy || 0, player.qz || 0, player.qw == null ? 1 : player.qw);
     if (lookX) {
-      const yaw = (cabin ? lookX : lookX * 0.35) * 0.5;
+      const yaw = lookX * (cabin ? 0.45 : 0.35) * 0.5;
       lookYaw.set(0, Math.sin(yaw), 0, Math.cos(yaw));
       bodyQuat.multiply(lookYaw);
     }
@@ -749,7 +749,7 @@ async function boot() {
     }
     camNose.set(0, 0, 1).applyQuaternion(camQuat);
     camUpV.set(0, 1, 0).applyQuaternion(camQuat);
-    const above = cabin ? 1.15 : 7.4 + lookY * 2.2;
+    const above = cabin ? 3.35 : 7.4 + lookY * 2.2;
     camTarget.set(
       player.x - camNose.x * viewDist + camUpV.x * above,
       player.y - camNose.y * viewDist + camUpV.y * above,
@@ -765,7 +765,7 @@ async function boot() {
       camera.position.x += (dx / len) * 2.4;
       camera.position.z += (dz / len) * 2.4;
     }
-    const wantFov = player.jets && player.flying ? 84 : 68;
+    const wantFov = cabin ? 90 : player.jets && player.flying ? 84 : 68;
     camFov += (wantFov - camFov) * Math.min(1, dt * 1.8);
     if (Math.abs(camera.fov - camFov) > 0.08) {
       camera.fov = camFov;
@@ -775,11 +775,9 @@ async function boot() {
       camera.quaternion.copy(bodyQuat);
       lookYaw.set(0, 1, 0, 0);
       camera.quaternion.multiply(lookYaw);
-      if (lookY) {
-        const px = lookY * 0.5;
-        lookYaw.set(Math.sin(px), 0, 0, Math.cos(px));
-        camera.quaternion.multiply(lookYaw);
-      }
+      const px = (lookY - 0.32) * 0.5;
+      lookYaw.set(Math.sin(px), 0, 0, Math.cos(px));
+      camera.quaternion.multiply(lookYaw);
     } else {
       camera.up.copy(camUpV);
       if (camera.up.lengthSq() < 1e-6) camera.up.set(0, 1, 0);

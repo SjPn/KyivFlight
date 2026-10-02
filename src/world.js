@@ -1694,6 +1694,29 @@ function plate(verts, material) {
   return mesh;
 }
 
+function contactBlob() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 64;
+  const g = canvas.getContext("2d");
+  const ink = g.createRadialGradient(32, 32, 2, 32, 32, 32);
+  ink.addColorStop(0, "rgba(0,0,0,0.9)");
+  ink.addColorStop(0.45, "rgba(0,0,0,0.45)");
+  ink.addColorStop(1, "rgba(0,0,0,0)");
+  g.fillStyle = ink;
+  g.fillRect(0, 0, 64, 64);
+  const map = new THREE.CanvasTexture(canvas);
+  map.colorSpace = THREE.SRGBColorSpace;
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1),
+    new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false, toneMapped: false }),
+  );
+  mesh.rotation.order = "YXZ";
+  mesh.renderOrder = 6;
+  mesh.visible = false;
+  return mesh;
+}
+
 function makePlane() {
   const g = new THREE.Group();
   const paint = new THREE.MeshPhongMaterial({ color: 0x0057b8, specular: 0x9ec4ea, shininess: 46, side: THREE.DoubleSide });
@@ -2608,6 +2631,8 @@ export function createWorld(city, index, flight = false) {
 
   const plane = flight ? makePlane() : null;
   if (plane) scene.add(plane);
+  const blob = flight ? contactBlob() : null;
+  if (blob) scene.add(blob);
 
   const railAt = (index, who) => {
     const mesh = plane?.userData?.stores?.[index];
@@ -2873,6 +2898,19 @@ export function createWorld(city, index, flight = false) {
           flame.scale.x = girth;
           flame.scale.z = girth;
           flame.position.z = -3.18 - plume * 1.05;
+        }
+      }
+      if (blob) {
+        const hop = Math.max(0, (player.agl ?? 999) - 0.5);
+        if (!plane || hop > 80) blob.visible = false;
+        else {
+          blob.visible = true;
+          const deck = player.y - (player.agl || 0);
+          blob.position.set(player.x, deck + 0.55, player.z);
+          blob.rotation.set(-Math.PI / 2, player.heading || 0, 0);
+          const spread = 1 + (hop / 80) * 0.7;
+          blob.scale.set(18 * spread, 13 * spread, 1);
+          blob.material.opacity = 0.62 * (1 - hop / 80);
         }
       }
       for (const s of sights) {

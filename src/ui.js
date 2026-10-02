@@ -186,7 +186,7 @@ export function createUI(city, index) {
             ${row(kbd("B"), "Zhuliany, or retry")}
           </section>
           <section><h5>Look</h5>
-            ${row(kbd("V"), "Cabin / chase")}
+            ${row(kbd("V"), "Nose / chase")}
             ${row(kbd("Mouse"), "Look around")}
             ${row(kbd("Esc"), "Free the cursor")}
           </section>
