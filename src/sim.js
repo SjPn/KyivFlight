@@ -80,15 +80,16 @@ const CHAIN = [
   { id: "first", title: "First flight", blurb: "Six drones, missiles" },
   { id: "riverpass", title: "Over the river", blurb: "Under 800 m" },
   { id: "pairintro", title: "The pair", blurb: "Four drones, two jets" },
+  { id: "bends", title: "The bends", blurb: "Dnipro, then Boryspil" },
+  { id: "intercept", title: "Intercept", blurb: "Catch two fast drones" },
+  { id: "escort", title: "Escort", blurb: "Stay with the airliner" },
+  { id: "pair", title: "Pair", blurb: "Four jets from the east" },
 ];
 
 const BOARD = [
   { id: "fence", title: "Fence", blurb: "Six drones, east fields" },
   { id: "river", title: "River", blurb: "Six drones along the Dnipro" },
   { id: "overflight", title: "Overflight", blurb: "Maidan, under 800 m" },
-  { id: "intercept", title: "Intercept", blurb: "Catch two fast drones" },
-  { id: "escort", title: "Escort", blurb: "Stay with the airliner" },
-  { id: "pair", title: "Pair", blurb: "Four jets from the east" },
 ];
 
 function meta(id) {
@@ -114,13 +115,22 @@ function homePad(sim) {
   return sim.fields.find((f) => f.icao === "UKKK") || sim.fields[0];
 }
 
+function fieldLabel(icao) {
+  return icao === "UKBB" ? "Boryspil" : "Zhuliany";
+}
+
+function landPad(sim) {
+  const icao = sim.landIcao || "UKKK";
+  return sim.fields.find((f) => f.icao === icao) || homePad(sim);
+}
+
 function pinHome(sim, player) {
-  const pad = homePad(sim);
+  const pad = landPad(sim);
   if (!pad) {
     sim.pin = null;
     return 0;
   }
-  sim.pin = { id: pad.id, n: "Zhuliany", x: pad.x, z: pad.z, note: pad.icao };
+  sim.pin = { id: pad.id, n: fieldLabel(pad.icao), x: pad.x, z: pad.z, note: pad.icao || "" };
   return Math.hypot(player.x - pad.x, player.z - pad.z);
 }
 
@@ -218,7 +228,7 @@ function blank(sim) {
 }
 
 function clearLesson(sim) {
-  for (const id of ["plus", "pull", "guns", "lock", "land", "bandit"]) delete sim.voiced[id];
+  for (const id of ["plus", "pull", "guns", "lock", "land", "bandit", "square"]) delete sim.voiced[id];
   sim.line = null;
 }
 
@@ -235,6 +245,8 @@ function beginSortie(sim, player, id) {
   sim.sortieT = 0;
   sim.failTitle = "";
   sim.cue = "";
+  sim.landIcao = "UKKK";
+  sim.highT = 0;
   player.weapon = 1;
   clearLesson(sim);
   const plan = { drones: [], civils: [], bandits: 0 };
@@ -272,6 +284,16 @@ function beginSortie(sim, player, id) {
       droneAt(-5200, -700, { agl: 460, radius: 850, pace: SLOW }),
     ];
     plan.bandits = 2;
+  } else if (id === "bends") {
+    const pts = riverPoints(sim.city).slice(0, 4);
+    sim.killsNeed = pts.length;
+    sim.landIcao = "UKBB";
+    plan.drones = pts.map((pt, i) => droneAt(pt.x, pt.z, {
+      agl: 220 + i * 70,
+      radius: 480,
+      pace: SLOW,
+      hp: 36,
+    }));
   } else if (id === "fence") {
     sim.killsNeed = 6;
     plan.drones = [
@@ -368,10 +390,12 @@ function enterLand(sim, player, title, sub) {
   if (sim.phase !== "fight") return;
   sim.phase = "land";
   sim.limit = null;
+  sim.highT = 0;
+  const where = fieldLabel(sim.landIcao || "UKKK");
   say(sim, title, sub, 3);
   offer(sim, "land", "Land to rearm.", 2);
   const dist = pinHome(sim, player);
-  setObj(sim, "Land to rearm", "Zhuliany", 1, dist, null);
+  setObj(sim, "Land to rearm", where, 1, dist, null);
 }
 
 function failSortie(sim, title) {
@@ -390,6 +414,7 @@ const PAR = {
   first: 240,
   riverpass: 160,
   pairintro: 320,
+  bends: 420,
   fence: 280,
   river: 300,
   overflight: 140,
@@ -494,6 +519,11 @@ function tickFight(sim, player, dt) {
     tickPass(sim, player, dt, "Over the river", "Under 800 m");
     return;
   }
+  if (sim.sortieId === "bends") {
+    pinCraft(sim, player, "drone");
+    setObj(sim, "The bends", "Under 800 m", sim.killsNeed ? sim.killsGot / sim.killsNeed : 0, null, null);
+    return;
+  }
   if (sim.sortieId === "overflight") {
     if (!sim.pin || sim.pin.id !== "maidan") sim.pin = { id: "maidan", n: "Maidan", x: 0, z: 0, note: "Under 800 m" };
     tickPass(sim, player, dt, "Overflight", "Maidan, under 800 m");
@@ -516,7 +546,7 @@ function tickFight(sim, player, dt) {
 
 function tickLand(sim, player, title) {
   const dist = pinHome(sim, player);
-  setObj(sim, title, "Zhuliany", 1, dist, null);
+  setObj(sim, title, fieldLabel(sim.landIcao || "UKKK"), 1, dist, null);
 }
 
 function onApproach(sim, player) {
@@ -545,9 +575,16 @@ function tickVoice(sim, player) {
     } else if (!player.flying && kmh >= vr) {
       sim.cue = "Pull up";
       offer(sim, "pull", "Pull up.", 3);
+    } else if (player.flying && player.lock && !player.fixed && (player.missiles ?? 0) > 0) {
+      sim.cue = "Nose on the circle";
+      offer(sim, "square", "Without the square, it goes wide.", 2);
     } else if (player.flying && player.fixed && (player.missiles ?? 0) > 0) {
       sim.cue = "Shoot";
     } else sim.cue = "";
+    return;
+  }
+  if (sim.sortieId === "bends" && sim.phase === "fight" && player.flying && (player.agl ?? 0) > 800) {
+    sim.cue = "Under 800 m";
     return;
   }
   if (sim.sortieId === "escort" && sim.phase === "fight" && player.flying && sim.pin) {
@@ -651,6 +688,10 @@ export function updateSim(sim, player, dt, fx) {
       failSortie(sim, "He got away");
     }
   }
+  if (sim.phase === "fight" && sim.sortieId === "bends" && player.flying && (player.agl ?? 0) > 800) {
+    sim.highT = (sim.highT || 0) + dt;
+    if (sim.highT > 8) failSortie(sim, "Too high");
+  } else if (sim.phase === "fight") sim.highT = 0;
   if (sim.phase === "fight") tickFight(sim, player, dt);
   else if (sim.phase === "land") tickLand(sim, player, "Land to rearm");
   else if (sim.phase === "fail") {
@@ -664,10 +705,16 @@ export function updateSim(sim, player, dt, fx) {
   }
   tickVoice(sim, player);
   const pad = fieldAt(sim.fields, player.x, player.z);
+  player.radAlt = player.flying && !player.wrecked && pad && (player.agl ?? 999) < 60
+    ? Math.max(0, Math.round(player.agl))
+    : null;
   const down = !player.flying && !!pad && !(sim.noReload > 0);
   if (down && sim.wasAir) {
     const short = rearm(player);
-    if (sim.phase === "land") completeSortie(sim, player);
+    const want = sim.landIcao || "UKKK";
+    const right = (pad.icao || "") === want;
+    if (sim.phase === "land" && right) completeSortie(sim, player);
+    else if (sim.phase === "land") say(sim, fieldLabel(want), "Not this runway");
     else if (sim.phase === "fail") beginSortie(sim, player, sim.sortieId);
     else if (short) say(sim, "Rearmed", "8 missiles · 300 rounds · flares");
   }

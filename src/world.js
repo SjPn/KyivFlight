@@ -1563,6 +1563,7 @@ function makeRunways(fields) {
     lamp.count = lights.length / 3;
     lamp.instanceMatrix.needsUpdate = true;
     lamp.frustumCulled = false;
+    group.userData.edgeLights = lamp;
     group.add(lamp);
   }
   if (hangars.length) {
@@ -1704,6 +1705,29 @@ function contactBlob() {
   ink.addColorStop(0.45, "rgba(0,0,0,0.45)");
   ink.addColorStop(1, "rgba(0,0,0,0)");
   g.fillStyle = ink;
+  g.fillRect(0, 0, 64, 64);
+  const map = new THREE.CanvasTexture(canvas);
+  map.colorSpace = THREE.SRGBColorSpace;
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1),
+    new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false, toneMapped: false }),
+  );
+  mesh.rotation.order = "YXZ";
+  mesh.renderOrder = 6;
+  mesh.visible = false;
+  return mesh;
+}
+
+function noseLamp() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 64;
+  const g = canvas.getContext("2d");
+  const glow = g.createRadialGradient(32, 32, 2, 32, 32, 32);
+  glow.addColorStop(0, "rgba(255,244,210,0.85)");
+  glow.addColorStop(0.35, "rgba(255,214,120,0.35)");
+  glow.addColorStop(1, "rgba(255,214,120,0)");
+  g.fillStyle = glow;
   g.fillRect(0, 0, 64, 64);
   const map = new THREE.CanvasTexture(canvas);
   map.colorSpace = THREE.SRGBColorSpace;
@@ -2548,9 +2572,13 @@ export function createWorld(city, index, flight = false) {
   const roadPack = makeRoads(city, index, flight);
   const roads = roadPack.mesh;
   scene.add(roads);
+  let edgeLights = null;
   if (flight && city.fields?.length) {
     const strips = makeRunways(city.fields);
-    if (strips) scene.add(strips);
+    if (strips) {
+      scene.add(strips);
+      edgeLights = strips.userData.edgeLights || null;
+    }
   }
   const railMap = new Map();
   const railCell = 48;
@@ -2591,12 +2619,21 @@ export function createWorld(city, index, flight = false) {
     scene.add(water);
   }
   const dnipro = meshFrom(dniproPos, 0x1a78c4, 1);
+  let dniproShine = null;
   if (dnipro) {
+    dnipro.material.dispose();
+    dnipro.material = new THREE.MeshPhongMaterial({
+      color: 0x1768b0,
+      specular: 0xb7dcff,
+      shininess: 70,
+      side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: -3,
+      polygonOffsetUnits: -3,
+    });
+    dniproShine = dnipro.material;
     dnipro.frustumCulled = false;
     dnipro.renderOrder = 2;
-    dnipro.material.polygonOffset = true;
-    dnipro.material.polygonOffsetFactor = -3;
-    dnipro.material.polygonOffsetUnits = -3;
     dnipro.material.emissive = new THREE.Color(0x0c4a78);
     dnipro.material.emissiveIntensity = 0.28;
     scene.add(dnipro);
@@ -2633,6 +2670,9 @@ export function createWorld(city, index, flight = false) {
   if (plane) scene.add(plane);
   const blob = flight ? contactBlob() : null;
   if (blob) scene.add(blob);
+  const lamp = flight ? noseLamp() : null;
+  if (lamp) scene.add(lamp);
+  let shimmer = 0;
 
   const railAt = (index, who) => {
     const mesh = plane?.userData?.stores?.[index];
@@ -2672,6 +2712,11 @@ export function createWorld(city, index, flight = false) {
       walls.material.emissive = walls.material.emissive || new THREE.Color(0xffd7a0);
       walls.material.emissiveMap = walls.material.map;
       walls.material.emissiveIntensity = t.emit;
+    }
+    if (edgeLights) {
+      const evening = time === 2;
+      edgeLights.material.color.setHex(evening ? 0xfff6d2 : 0xc4b89a);
+      edgeLights.material.toneMapped = !evening;
     }
   }
 
@@ -2820,6 +2865,11 @@ export function createWorld(city, index, flight = false) {
       const moved = Math.hypot(player.x - (ground.userData.cx || 0), player.z - (ground.userData.cz || 0));
       if (moved > span * 0.12 || Math.abs(span - (ground.userData.span || 0)) > span * 0.08) scheduleGround(player.x, player.z, span);
       pumpGround(36);
+      shimmer += dt;
+      if (dniproShine) {
+        const s = 0.45 + 0.55 * Math.sin(shimmer * 0.65);
+        dniproShine.specular.setRGB(0.45 * s, 0.7 * s, 0.95 * s);
+      }
       sky.position.set(player.x, 0, player.z);
       sky.material.uniforms.sunDir.value.copy(sunDir);
       sunGlow.position.set(player.x, player.y + 30, player.z).addScaledVector(sunDir, 3400);
@@ -2911,6 +2961,22 @@ export function createWorld(city, index, flight = false) {
           const spread = 1 + (hop / 80) * 0.7;
           blob.scale.set(18 * spread, 13 * spread, 1);
           blob.material.opacity = 0.62 * (1 - hop / 80);
+        }
+      }
+      if (lamp) {
+        const hop = Math.max(0, (player.agl ?? 999) - 0.5);
+        const lit = player.flying && !player.wrecked && player.gearDown !== false && hop < 110 && hop > 0.8;
+        if (!lit) lamp.visible = false;
+        else {
+          lamp.visible = true;
+          const deck = player.y - (player.agl || 0);
+          const reach = 18 + hop * 0.85;
+          const head = player.heading || 0;
+          lamp.position.set(player.x + Math.sin(head) * reach, deck + 0.6, player.z + Math.cos(head) * reach);
+          lamp.rotation.set(-Math.PI / 2, head, 0);
+          const spread = 0.7 + hop / 80;
+          lamp.scale.set(16 * spread, 26 * spread, 1);
+          lamp.material.opacity = 0.62 * (1 - hop / 120);
         }
       }
       for (const s of sights) {

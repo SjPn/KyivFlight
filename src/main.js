@@ -5,10 +5,10 @@ import { clearPlazas, indexCity, nearestRoad, onRoad, openStreets, presentEast }
 import { decodeCity } from "./mapio.js?v=2";
 import { FIELDS, fieldAt, nearestField, runwayStart } from "./airfields.js?v=2";
 import { createPlayer, resetPlayer, updatePlayer } from "./player.js?v=93";
-import { armSortie, clearRetry, createSim, nearestSight, pickSortie, restartSortie, retryHint, updateSim } from "./sim.js?v=69";
+import { armSortie, clearRetry, createSim, nearestSight, pickSortie, restartSortie, retryHint, updateSim } from "./sim.js?v=70";
 import { isPhone, mountTouch, touchAxes } from "./touch.js?v=5";
-import { createUI } from "./ui.js?v=99";
-import { createWorld } from "./world.js?v=126";
+import { createUI } from "./ui.js?v=100";
+import { createWorld } from "./world.js?v=127";
 
 const app = document.querySelector("#app");
 const loading = document.querySelector("#loading");

@@ -154,7 +154,7 @@ export function createUI(city, index) {
       <div class="speed">
         <div class="street off"></div>
         <div class="v">0</div>
-        <div class="chips"><span class="u">KM/H</span><span class="chip gear">GEAR</span><span class="chip flaps">CLEAN</span><span class="chip alarm off">STALL</span></div>
+        <div class="chips"><span class="u">KM/H</span><span class="radalt off">0 m</span><span class="chip gear">GEAR</span><span class="chip flaps">CLEAN</span><span class="chip alarm off">STALL</span></div>
         <div class="thr"><i><em></em></i><span>0%</span></div>
         <div class="land off"><i><s></s><em></em></i></div>
       </div>
@@ -894,6 +894,12 @@ export function createUI(city, index) {
       setText(toast, sim.toast || "");
       const kmh = Math.abs(player.speed) * 3.6;
       setText($(".speed .v"), Math.round(kmh));
+      const rad = $(".radalt");
+      if (rad) {
+        const show = player.radAlt != null;
+        rad.classList.toggle("off", !show);
+        if (show) setText(rad, player.radAlt + " m");
+      }
       const thr = $(".thr");
       if (thr) {
         const pct = Math.round((player.throttle || 0) * 100);

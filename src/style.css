@@ -339,6 +339,8 @@ html, body {
 }
 .speed .v { color: #f2c14e; font-size: clamp(40px, 4.6vw, 56px); font-weight: 700; line-height: 0.95; font-variant-numeric: tabular-nums; }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 2px; }
+.radalt { color: #d7ecff; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
+.radalt.off { display: none; }
 .speed .u { color: #d5deea; letter-spacing: .12em; font-size: 11px; font-weight: 800; }
 .chip {
   color: #d5deea; border: 1px solid #ffffff33; border-radius: 4px;
