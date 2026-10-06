@@ -17,7 +17,7 @@ const CLASS_COLOR = {
 
 const TIMES = [
   { bg: 0xd7c4a4, fog: 0xe7d7bc, sun: 0xffc98a, elev: 24, az: 70, intensity: 1.3, amb: 0.82, emit: 0.04 },
-  { bg: 0x7eb6ea, fog: 0xd7e8f8, sun: 0xfff4d2, elev: 20, az: -86, intensity: 1.35, amb: 0.62, emit: 0 },
+  { bg: 0x7eb6ea, fog: 0xd7e8f8, sun: 0xfff4d2, elev: 68, az: -86, intensity: 1.25, amb: 0.78, emit: 0 },
   { bg: 0x6a7aa3, fog: 0xa8b4cc, sun: 0xffb07a, elev: 14, az: -80, intensity: 0.95, amb: 0.62, emit: 0.28 },
 ];
 
@@ -865,7 +865,28 @@ function meshFrom(positions, color, opacity = 1) {
   return new THREE.Mesh(geo, mat);
 }
 
-function tuneWindows(mat) {
+const SUN_SHADE = `
+    {
+      vec3 sunV = normalize(mat3(viewMatrix) * uSunDir);
+      float lit = dot(normalize(normal), sunV);
+      outgoingLight *= mix(0.86, 1.1, smoothstep(-0.05, 0.55, lit));
+    }
+    #include <opaque_fragment>
+`;
+
+function shadeBySun(mat, sunDir, key) {
+  mat.customProgramCacheKey = () => key;
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (shader) => {
+    if (prev) prev(shader);
+    shader.uniforms.uSunDir = sunDir;
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", "#include <common>\nuniform vec3 uSunDir;")
+      .replace("#include <opaque_fragment>", SUN_SHADE);
+  };
+}
+
+function tuneWindows(mat, sunDir) {
   mat.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", "#include <common>\nvarying float vStory;")
@@ -891,6 +912,7 @@ function tuneWindows(mat) {
          }`,
       );
   };
+  shadeBySun(mat, sunDir, "sun-windows");
 }
 
 const CITY_LAT = 50.4501;
@@ -915,7 +937,7 @@ function districtOf(x, z) {
   return "";
 }
 
-function makeBuildings(city, index) {
+function makeBuildings(city, index, sunDir) {
   const all = city.buildings;
   if (!all.length) return null;
   const buckets = new Map();
@@ -936,7 +958,7 @@ function makeBuildings(city, index) {
   const bandGeo = new THREE.BoxGeometry(1, 1, 1);
   bandGeo.translate(0, 0.5, 0);
   const mat = new THREE.MeshLambertMaterial({ map: windowTexture(), color: 0xffffff });
-  tuneWindows(mat);
+  tuneWindows(mat, sunDir);
   const roofMat = new THREE.MeshLambertMaterial({
     map: roofTexture(),
     color: 0xffffff,
@@ -944,9 +966,13 @@ function makeBuildings(city, index) {
     polygonOffsetFactor: -2,
     polygonOffsetUnits: -2,
   });
+  shadeBySun(roofMat, sunDir, "sun-roof");
   const plinthMat = new THREE.MeshLambertMaterial({ color: 0xcfc6b8 });
   const corniceMat = new THREE.MeshLambertMaterial({ color: 0xf4efe6 });
   const bandMat = new THREE.MeshLambertMaterial({ color: 0xb7b0a4 });
+  shadeBySun(plinthMat, sunDir, "sun-plinth");
+  shadeBySun(corniceMat, sunDir, "sun-cornice");
+  shadeBySun(bandMat, sunDir, "sun-band");
   const root = new THREE.Group();
   root.frustumCulled = false;
   const chunks = [];
@@ -1743,10 +1769,10 @@ function noseLamp() {
 
 function makePlane() {
   const g = new THREE.Group();
-  const paint = new THREE.MeshPhongMaterial({ color: 0x0057b8, specular: 0x9ec4ea, shininess: 46, side: THREE.DoubleSide });
+  const paint = new THREE.MeshPhongMaterial({ color: 0x0057b8, specular: 0xd4ecff, shininess: 78, side: THREE.DoubleSide });
   const accent = new THREE.MeshPhongMaterial({ color: 0xffd100, shininess: 28, side: THREE.DoubleSide });
   const dark = new THREE.MeshPhongMaterial({ color: 0x232830, shininess: 18 });
-  const glass = new THREE.MeshPhongMaterial({ color: 0xb7d4ea, transparent: true, opacity: 0.55, shininess: 90 });
+  const glass = new THREE.MeshPhongMaterial({ color: 0xb7d4ea, specular: 0xffffff, transparent: true, opacity: 0.55, shininess: 140 });
   const fuse = shell([
     new THREE.Vector2(0.05, 0),
     new THREE.Vector2(0.28, 0.45),
@@ -2305,7 +2331,7 @@ export function createWorld(city, index, flight = false) {
   scene.add(hemi, sun, sun.target);
 
   const sky = new THREE.Mesh(
-    new THREE.SphereGeometry(42000, 28, 16),
+    new THREE.SphereGeometry(7000, 32, 18),
     new THREE.ShaderMaterial({
       glslVersion: THREE.GLSL1,
       side: THREE.BackSide,
@@ -2317,7 +2343,16 @@ export function createWorld(city, index, flight = false) {
         sunColor: { value: new THREE.Color(TIMES[1].sun) },
         sunDir: { value: new THREE.Vector3(80, 140, 40).normalize() },
       },
-      vertexShader: "varying vec3 vP; #include <common>\n#include <logdepthbuf_pars_vertex>\nvoid main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); #include <logdepthbuf_vertex>\n}",
+      vertexShader: [
+        "varying vec3 vP;",
+        "#include <common>",
+        "#include <logdepthbuf_pars_vertex>",
+        "void main(){",
+        "  vP = position;",
+        "  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);",
+        "  #include <logdepthbuf_vertex>",
+        "}",
+      ].join("\n"),
       fragmentShader: [
         "varying vec3 vP;",
         "uniform vec3 top;",
@@ -2331,8 +2366,10 @@ export function createWorld(city, index, flight = false) {
         "  float h = clamp(dir.y * 1.15 + 0.08, 0.0, 1.0);",
         "  vec3 col = mix(horizon, top, pow(h, 0.85));",
         "  float sun = dot(dir, normalize(sunDir));",
-        "  float glow = pow(max(sun, 0.0), 5.0);",
-        "  col += sunColor * glow * 0.45;",
+        "  float disc = smoothstep(0.99955, 0.99985, sun);",
+        "  float halo = pow(max(sun, 0.0), 180.0);",
+        "  float glow = pow(max(sun, 0.0), 12.0);",
+        "  col += sunColor * (disc * 0.9 + halo * 0.22 + glow * 0.06);",
         "  gl_FragColor = vec4(col, 1.0);",
         "  #include <logdepthbuf_fragment>",
         "}",
@@ -2360,7 +2397,7 @@ export function createWorld(city, index, flight = false) {
     transparent: true,
     blending: THREE.AdditiveBlending,
   }));
-  sunGlow.scale.set(720, 720, 1);
+  sunGlow.scale.set(240, 240, 1);
   sunGlow.renderOrder = -1;
   sunGlow.frustumCulled = false;
   scene.add(sunGlow);
@@ -2645,7 +2682,7 @@ export function createWorld(city, index, flight = false) {
   const parks = meshFrom(parkPos, 0x2c6b3c, 0.82);
   if (parks) scene.add(parks);
 
-  const buildings = makeBuildings(city, index);
+  const buildings = makeBuildings(city, index, sky.material.uniforms.sunDir);
   if (buildings) scene.add(buildings);
   const viewX = home?.x ?? city.spawn?.x ?? 0;
   const viewZ = home?.z ?? city.spawn?.z ?? 0;
@@ -2695,7 +2732,7 @@ export function createWorld(city, index, flight = false) {
   function applyTime(next) {
     time = next % 3;
     const t = TIMES[time];
-    scene.background.setHex(t.bg);
+    if (scene.background) scene.background.setHex(t.bg);
     scene.fog.color.setHex(t.fog);
     sun.color.setHex(t.sun);
     sun.intensity = t.intensity;
@@ -2870,7 +2907,7 @@ export function createWorld(city, index, flight = false) {
         const s = 0.45 + 0.55 * Math.sin(shimmer * 0.65);
         dniproShine.specular.setRGB(0.45 * s, 0.7 * s, 0.95 * s);
       }
-      sky.position.set(player.x, 0, player.z);
+      sky.position.set(player.x, player.y, player.z);
       sky.material.uniforms.sunDir.value.copy(sunDir);
       sunGlow.position.set(player.x, player.y + 30, player.z).addScaledVector(sunDir, 3400);
       const air = player.flying || agl > 45;

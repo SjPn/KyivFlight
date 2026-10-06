@@ -8,7 +8,7 @@ import { createPlayer, resetPlayer, updatePlayer } from "./player.js?v=93";
 import { armSortie, clearRetry, createSim, nearestSight, pickSortie, restartSortie, retryHint, updateSim } from "./sim.js?v=70";
 import { isPhone, mountTouch, touchAxes } from "./touch.js?v=5";
 import { createUI } from "./ui.js?v=100";
-import { createWorld } from "./world.js?v=127";
+import { createWorld } from "./world.js?v=142";
 
 const app = document.querySelector("#app");
 const loading = document.querySelector("#loading");
@@ -811,6 +811,7 @@ async function boot() {
     try {
       renderer.render(world.scene, camera);
     } catch (err) {
+      renderer.setRenderTarget(null);
       const box = document.querySelector("#loading");
       box.classList.remove("done");
       box.querySelector(".msg").textContent = err.message;
